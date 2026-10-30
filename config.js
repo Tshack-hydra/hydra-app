@@ -3,13 +3,13 @@
 
 export const CONFIG = {
   // Google Cloud → APIs & Services → Credentials → OAuth 2.0 Client ID (Web application)
-  googleClientId: '',
+  googleClientId: '42372927575-ne1js254mpuor6rqravmstagebtcb4el.apps.googleusercontent.com',
 
   // Only accounts on this domain can sign in
   workspaceDomain: 'hydradesign.co.uk',
 
   // The long ID in the Google Sheet's URL: docs.google.com/spreadsheets/d/<THIS PART>/edit
-  spreadsheetId: '',
+  spreadsheetId: '1xUVPsC0miZgYe_9fUWMwgb2WjP4f5caU9YhM_9ga1r8',
 
   // How often the Sheets section re-reads the spreadsheet while it's open
   sheetRefreshSeconds: 30,
