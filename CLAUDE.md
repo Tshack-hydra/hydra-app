@@ -33,7 +33,7 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Sheets: `modal()` moves a form's submit button to top-trailing, adds Cancel top-leading, grabber,
   swipe-down dismiss and a discard-changes check. Give long submit labels a short `data-bar` label.
 - Branding: the HYDRA wordmark (`icons/hydra-wordmark.png`) is used as a CSS mask via `.wordmark`, so it
-  follows the text colour. Use it on the sign-in screen and Settings footer only, not as a nav-bar title (HIG).
+  follows the text colour. Use it on the sign-in screen, the Settings footer, and fixed top-leading in the nav bar on every screen (`.nav-logo`; the person asked for it). Not as the nav-bar title.
 - Icons: `js/icons.js` (SF-Symbols-style line icons). No emoji in UI. SF Symbols themselves aren't licensed for web.
 - Respect Reduce Motion / Reduce Transparency / Increase Contrast; errors stay until tapped.
 

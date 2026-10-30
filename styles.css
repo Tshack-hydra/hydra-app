@@ -120,7 +120,9 @@ body.scrolled .navbar {
 }
 .nav-title { font-weight: 600; font-size: 1rem; opacity: 0; transition: opacity 0.2s; white-space: nowrap; }
 body.scrolled .nav-title { opacity: 1; }
+.nav-start { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .nav-leading { display: flex; }
+.nav-logo { width: 78px; flex: none; }
 .nav-trailing { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
 #nav-actions { display: flex; gap: 8px; }
 /* toolbar items sit in small glass circles (iOS 26) with a 44pt hit area */
@@ -290,6 +292,19 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .ev-main small { font-size: 0.882rem; color: var(--label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .day.past .group { opacity: 0.6; }
 .toolbar .spacer { flex: 1; }
+.toolbar .end { margin-left: auto; }
+
+/* pull to refresh: the activity indicator drops in under the navigation bar */
+.ptr {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 44px); z-index: 30; pointer-events: none;
+  width: 36px; height: 36px; margin-left: -18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transform: translateY(calc(var(--pull, 0px) - 40px));
+}
+.ptr.on { opacity: 1; }
+.ptr .spin { width: 24px; height: 24px; animation: none; transform: rotate(var(--turn, 0deg)); opacity: 0.55; }
+.ptr.ready .spin { opacity: 1; }
+.ptr.busy .spin { opacity: 1; animation: spin 0.9s steps(8) infinite; }
+.ptr:not(.on) { transition: opacity 0.2s, transform 0.25s; }
 .more-days { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 44px; border: 0; background: none; color: var(--label2); font-size: 0.882rem; font-weight: 600; }
 .more-days:active { opacity: 0.6; }
 .more-days .icon svg { width: 18px; height: 18px; }
