@@ -28,6 +28,11 @@ export const CONFIG = {
   // Default Dext "email in" address. Each person can set their own in Settings.
   dextEmail: '',
 
+  // Colour of each person's initials tag in the app. Keep these the same as the chip colours in the
+  // spreadsheet's Who drop-down — Google doesn't let apps read those colours, so they're listed here.
+  // Colours: gray, red, orange, yellow, green, teal, blue, purple. Anyone not listed shows in gray.
+  teamColours: { ALL: 'gray', TS: 'orange', SP: 'green', MR: 'blue', DA: 'purple' },
+
   receiptCategories: [
     'Travel', 'Fuel', 'Parking', 'Accommodation', 'Food & Drink',
     'Equipment', 'Consumables', 'Equipment Hire', 'Postage & Courier', 'Other',

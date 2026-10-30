@@ -20,6 +20,7 @@
   --on-tint: #ffffff;
   /* system colours */
   --green: rgb(52, 199, 89);
+  --green-soft: rgba(52, 199, 89, 0.16);
   --red: rgb(255, 56, 60);
   --orange: rgb(255, 141, 40);
   --orange-soft: rgba(255, 141, 40, 0.16);
@@ -48,6 +49,7 @@
     --tint-soft: rgba(255, 255, 255, 0.16);
     --on-tint: #000000;
     --green: rgb(48, 209, 88);
+    --green-soft: rgba(48, 209, 88, 0.2);
     --red: rgb(255, 66, 69);
     --orange: rgb(255, 146, 48);
     --orange-soft: rgba(255, 146, 48, 0.2);
@@ -287,6 +289,25 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .ev-main b { font-weight: 600; }
 .ev-main small { font-size: 0.882rem; color: var(--label2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .day.past .group { opacity: 0.6; }
+.toolbar .spacer { flex: 1; }
+.more-days { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 44px; border: 0; background: none; color: var(--label2); font-size: 0.882rem; font-weight: 600; }
+.more-days:active { opacity: 0.6; }
+.more-days .icon svg { width: 18px; height: 18px; }
+.month-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
+.month-head h2 { flex: 1; margin: 0; font-size: 1.1765rem; line-height: 1.25; font-weight: 700; letter-spacing: -0.023em; }
+.month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin: 0 -12px; }
+.month-grid .wd { text-align: center; font-size: 0.7647rem; font-weight: 600; color: var(--label2); padding: 4px 0 6px; }
+.mday { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 96px; padding: 4px 1px 2px; border: 0; border-top: 0.5px solid var(--sep); border-radius: 0; background: none; min-width: 0; }
+.mday .num { align-self: center; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-size: 0.7647rem; font-variant-numeric: tabular-nums; }
+.mday.out { opacity: 0.45; }
+.mday.today .num { background: var(--tint); color: var(--on-tint); font-weight: 700; }
+.mday.sel { background: var(--fill); }
+.chips-day { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mchip { display: block; background: var(--chip-bg); color: var(--chip-fg); border-radius: 3px; padding: 1px 3px; font-size: 0.647rem; line-height: 1.25; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mmore { font-size: 0.647rem; line-height: 1.25; color: var(--label2); text-align: left; padding: 0 3px; }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 4px 0; }
+.swatch { width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--chip-bg); box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; }
+.swatch.on { outline: 2px solid var(--label); outline-offset: 2px; }
 
 /* ---- sheets: Reminders-style task list ---- */
 .sheet-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px; scrollbar-width: none; }
@@ -309,10 +330,29 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .tick::before { content: ''; position: absolute; inset: 10px; border-radius: 50%; border: 1.5px solid var(--label3); z-index: -1; transition: background 0.15s; }
 .task.done .tick::before { background: var(--green); border-color: var(--green); }
 .task-text { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 12px 0; display: flex; flex-direction: column; gap: 2px; }
-.task.done .task-text span { color: var(--label2); text-decoration: line-through; text-decoration-color: var(--label3); }
+.task.done { background: var(--green-soft); }
 .task-text small { font-size: 0.882rem; }
 .who { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: 40%; }
-.initials { font-size: 0.647rem; font-weight: 700; background: var(--fill); color: var(--label2); border-radius: 6px; padding: 3px 6px; }
+.initials { font-size: 0.647rem; font-weight: 700; background: var(--tag-bg); color: var(--tag-fg); border-radius: 999px; padding: 3px 7px; }
+/* initials tags: the same light/dark pairs as Google Sheets' drop-down chip colours (CONFIG.teamColours) */
+.tag-gray { --tag-bg: #e6e6e6; --tag-fg: #3d3d3d; }
+.tag-red { --tag-bg: #ffcfc9; --tag-fg: #b10202; }
+.tag-orange { --tag-bg: #ffc8aa; --tag-fg: #753800; }
+.tag-yellow { --tag-bg: #ffe5a0; --tag-fg: #473821; }
+.tag-green { --tag-bg: #d4edbc; --tag-fg: #11734b; }
+.tag-teal { --tag-bg: #c6dbe1; --tag-fg: #215a6c; }
+.tag-blue { --tag-bg: #bfe1f6; --tag-fg: #0a53a8; }
+.tag-purple { --tag-bg: #e6cff2; --tag-fg: #5a3286; }
+@media (prefers-color-scheme: dark) {
+  .tag-gray { --tag-bg: #3d3d3d; --tag-fg: #e6e6e6; }
+  .tag-red { --tag-bg: #b10202; --tag-fg: #ffcfc9; }
+  .tag-orange { --tag-bg: #753800; --tag-fg: #ffc8aa; }
+  .tag-yellow { --tag-bg: #473821; --tag-fg: #ffe5a0; }
+  .tag-green { --tag-bg: #11734b; --tag-fg: #d4edbc; }
+  .tag-teal { --tag-bg: #215a6c; --tag-fg: #c6dbe1; }
+  .tag-blue { --tag-bg: #0a53a8; --tag-fg: #bfe1f6; }
+  .tag-purple { --tag-bg: #5a3286; --tag-fg: #e6cff2; }
+}
 .add-task { width: 100%; text-align: left; border: 0; min-height: 44px; padding: 11px 16px 11px 52px; color: var(--tint); }
 .add-task:active { background: var(--fill2); }
 .add-task .add-plus { position: absolute; left: 13px; top: 50%; translate: 0 -50%; width: 26px; height: 26px; border-radius: 50%; background: var(--tint); color: var(--on-tint); display: flex; align-items: center; justify-content: center; }

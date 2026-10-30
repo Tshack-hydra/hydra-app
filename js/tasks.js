@@ -3,13 +3,13 @@
 // the row green there, and rows added by anyone (or by Claude) appear on the next refresh.
 //
 // A tab counts as a task list when it has a "Task | Who | Done" header, or ≤ 3 columns. Done tasks stay
-// in the list (struck through) unless "Hide Done" is on.
+// in the list (tinted green) unless "Hide Done" is on.
 
 import { CONFIG } from '../config.js';
 import { tokenValid, myInitials } from './google.js';
 import { icon } from './icons.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
-import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, formatWho, guardedWrite, setDone, insertTask } from './sheets.js';
+import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, initialsTag, formatWho, guardedWrite, setDone, insertTask } from './sheets.js';
 
 export function renderTasks(root, ctx) {
   if (!CONFIG.spreadsheetId) {
@@ -66,7 +66,7 @@ export function renderTasks(root, ctx) {
     fill(tools, h('div', { class: 'seg' },
       h('button', { class: mine ? 'on' : '', onclick: () => { store.set('hydra.tasks.who', 'mine'); render(); } }, me() ? `Mine (${me()})` : 'Mine'),
       h('button', { class: mine ? '' : 'on', onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'Everyone')),
-      h('button', { class: 'chip' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, 'Hide Done'));
+      h('button', { class: 'chip' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, hideDone() ? 'Show Done' : 'Hide Done'));
 
     if (mine && !me()) {
       fill(body, h('section', { class: 'card center' },
@@ -107,10 +107,10 @@ export function renderTasks(root, ctx) {
       h('button', { class: 'task-text', onclick: () => openInSheets(l.tab) },
         h('span', {}, t.text || h('i', { class: 'muted' }, '(blank)')),
         t.extra.length ? h('small', { class: 'muted' }, t.extra.join(' · ')) : null),
-      h('span', { class: 'who' }, whoList(t.who).map(w => h('span', { class: 'initials' }, w))));
+      h('span', { class: 'who' }, whoList(t.who).map(initialsTag)));
   }
 
-  // Ticked tasks stay in the list (struck through) unless Hide Done is on; tap again to untick
+  // Ticked tasks stay in the list (tinted green) unless Hide Done is on; tap again to untick
   async function toggleDone(btn, l, t) {
     const done = !t.done;
     btn.disabled = true;

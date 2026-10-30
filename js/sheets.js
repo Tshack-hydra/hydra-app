@@ -79,6 +79,9 @@ export function parseList(rows) {
   return { used, doneCol, lastRow, sections: sections.filter(s => s.title || s.tasks.length) };
 }
 
+// An initials tag coloured like that person's chip in the sheet (CONFIG.teamColours)
+export const initialsTag = w => h('span', { class: 'initials tag-' + (CONFIG.teamColours?.[w] || 'gray') }, w);
+
 export const whoList = who => who.toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
 // Same format as the sheet's multi-select Who dropdown ("TS, MR"), so typed initials become chips there
 export const formatWho = who => whoList(who).join(', ');
@@ -263,7 +266,7 @@ export function renderSheets(root, ctx) {
     const p = prefs();
     fill(tools,
       initials() ? h('button', { class: 'chip' + (p.mine ? '' : ' off'), onclick: () => setPref('mine', !p.mine) }, `Mine (${initials()})`) : null,
-      h('button', { class: 'chip' + (p.hideDone ? '' : ' off'), onclick: () => setPref('hideDone', !p.hideDone) }, 'Hide Done'));
+      h('button', { class: 'chip' + (p.hideDone ? '' : ' off'), 'aria-pressed': String(p.hideDone), onclick: () => setPref('hideDone', !p.hideDone) }, p.hideDone ? 'Show Done' : 'Hide Done'));
     ctx.actions(
       h('button', { class: 'nav-icon', 'aria-label': 'Refresh now', onclick: () => refresh(true) }, icon('refresh')),
       h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, icon('external')));
@@ -294,7 +297,7 @@ export function renderSheets(root, ctx) {
       h('button', { class: 'task-text', onclick: () => editTask(t, used) },
         h('span', {}, t.text || h('i', { class: 'muted' }, '(blank)')),
         t.extra.length ? h('small', { class: 'muted' }, t.extra.join(' · ')) : null),
-      h('span', { class: 'who' }, whoList(t.who).map(w => h('span', { class: 'initials' }, w))));
+      h('span', { class: 'who' }, whoList(t.who).map(initialsTag)));
   }
 
   async function guarded(r, c, expected, work) {

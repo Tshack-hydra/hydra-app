@@ -63,6 +63,9 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
   sheet (Extensions → Apps Script), so after editing the file, paste it in again. Keep the app's `headingReqs`
   producing the same result.
 - Sheets has no table view any more: every tab is a list (extra columns show as small text).
+- Initials tags use `CONFIG.teamColours` (Google's chip palette, `.tag-*` in styles.css). The Sheets API doesn't
+  expose drop-down chip colours, so update that map when someone joins or a chip colour changes.
+- Done tasks stay visible with a `--green-soft` row tint (no strikethrough); the toggle reads Hide Done / Show Done.
 - `tasks.js` reuses `sheets.js` exports (`parseList`, `isListTab`, `guardedWrite`, `setDone`, `insertTask`) across all list tabs.
 - Initials: `myInitials()` in `google.js` (Settings value, else from the Google name).
 - Every write re-reads the target cell first (`guarded`) and aborts if it changed — keep that for new writes.
