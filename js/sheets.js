@@ -5,9 +5,9 @@
 //   bold row with only column A filled = section heading (e.g. "Alo Shanghai")
 //   column A = task, column B = who (initials, "SP/TS", "ALL")
 //   green fill = done (ticking a task paints the row green, like the team does by hand)
-//   optional header row ("Task | Who | Done | Delete"): Done/Delete hold tick boxes, the sheet's own
-//   conditional formatting paints ticked rows green (ticked or green both count as done), and the sheet's
-//   Apps Script removes rows whose Delete box is ticked. Columns right of the header are ignored.
+//   optional header row ("Task | Who | Done"): Done holds tick boxes and the sheet's own conditional
+//   formatting paints ticked rows green (ticked or green both count as done). Columns right of the
+//   header are ignored. Rows deleted or cleared in the sheet simply disappear from the app.
 // Any extra columns show as small text under the task.
 
 import { CONFIG } from '../config.js';
@@ -36,47 +36,47 @@ export function usedCols(rows) {
   return n;
 }
 
-const HEADER_WORDS = /^(tasks?|who|done|delete)$/i;
+const HEADER_WORDS = /^(tasks?|who|done)$/i;
 const text = c => (c?.v || '').trim();
 
-// With a header row ("Task | Who | Done | Delete") the table is the columns up to the first blank header
-// cell; anything to the right (like the instructions in column F) is ignored. Done and Delete are tick boxes.
+// With a header row ("Task | Who | Done") the table is the columns up to the first blank header cell;
+// anything to the right (like the instructions in column E) is ignored. Done is a tick box.
 export function tableShape(rows) {
   const first = rows.findIndex(r => r.some(text));
   const header = first >= 0 && rows[first].some(c => HEADER_WORDS.test(text(c))) ? first : -1;
-  if (header < 0) return { header, used: Math.max(usedCols(rows), 2), doneCol: -1, deleteCol: -1 };
+  if (header < 0) return { header, used: Math.max(usedCols(rows), 2), doneCol: -1 };
   const names = rows[header].map(c => text(c).toLowerCase());
   let width = names.findIndex(n => !n);
   if (width < 0) width = names.length;
-  return { header, used: Math.max(width, 2), doneCol: names.indexOf('done'), deleteCol: names.indexOf('delete') };
+  return { header, used: Math.max(width, 2), doneCol: names.indexOf('done') };
 }
 
 // Group rows into sections of tasks (see header comment). lastRow = last row with any content.
 export function parseList(rows) {
-  const { header, used, doneCol, deleteCol } = tableShape(rows);
-  // Tick boxes read "TRUE"/"FALSE" on every row, so those columns never count as content
-  const val = (r, c) => (c === doneCol || c === deleteCol ? '' : text(r[c]));
+  const { header, used, doneCol } = tableShape(rows);
+  // Tick boxes read "TRUE"/"FALSE" on every row, so the Done column never counts as content
+  const val = (r, c) => (c === doneCol ? '' : text(r[c]));
   const sections = [];
-  let cur = { title: '', row: -1, doneCol, deleteCol, tasks: [] };
+  let cur = { title: '', row: -1, doneCol, tasks: [] };
   sections.push(cur);
   let lastRow = header;
   rows.forEach((r, i) => {
     if (i === header) return;
     const a = val(r, 0);
     const rest = [];
-    for (let c = 1; c < used; c++) if (c !== doneCol && c !== deleteCol) rest.push(val(r, c));
+    for (let c = 1; c < used; c++) if (c !== doneCol) rest.push(val(r, c));
     if (!a && !rest.some(Boolean)) return;
     lastRow = i;
     if (!a) return; // initials but no task text: nothing to show
     if (a && r[0]?.bold && !rest.some(Boolean)) {
-      cur = { title: a, row: i, doneCol, deleteCol, tasks: [] };
+      cur = { title: a, row: i, doneCol, tasks: [] };
       sections.push(cur);
       return;
     }
     const ticked = doneCol >= 0 && r[doneCol]?.v === 'TRUE';
     cur.tasks.push({ row: i, text: a, who: rest[0] || '', extra: rest.slice(1).filter(Boolean), doneCol, done: ticked || isGreen(r[0]?.bg) || isGreen(r[1]?.bg) });
   });
-  return { used, doneCol, deleteCol, lastRow, sections: sections.filter(s => s.title || s.tasks.length) };
+  return { used, doneCol, lastRow, sections: sections.filter(s => s.title || s.tasks.length) };
 }
 
 export const whoList = who => who.toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
@@ -166,7 +166,7 @@ export const headingFont = (rows, sections) => {
   const s = sections.find(x => x.row >= 0);
   return s ? rows[s.row][0]?.font || null : null;
 };
-const headingReqs = (tab, row, used, name, font, deleteCol = -1) => [
+const headingReqs = (tab, row, used, name, font) => [
   { setDataValidation: { range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used } } },
   { updateCells: {
     range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used },
@@ -176,7 +176,6 @@ const headingReqs = (tab, row, used, name, font, deleteCol = -1) => [
     })) }],
     fields: 'userEnteredValue,userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment,userEnteredFormat.textFormat.bold' + (font ? ',userEnteredFormat.textFormat.fontFamily' : ''),
   } },
-  ...(deleteCol >= 0 ? tickReqs(tab, row, deleteCol, false) : []), // a section can still be deleted
 ];
 
 // Insert a task as a new row under the last task of section s (guarded on that anchor row)
@@ -185,14 +184,14 @@ export function insertTask(tab, s, used, text, who) {
   const anchorRow = last ? last.row : s.row;
   const at = anchorRow + 1;
   const work = () => batch([
-    { insertDimension: { range: { sheetId: tab.sheetId, dimension: 'ROWS', startIndex: at, endIndex: at + 1 }, inheritFromBefore: at > 0 } },
+    // copy the row setup (Who drop-down, tick box) from the task above, or for an empty section from the row below
+    { insertDimension: { range: { sheetId: tab.sheetId, dimension: 'ROWS', startIndex: at, endIndex: at + 1 }, inheritFromBefore: !!last } },
     { updateCells: {
       range: { sheetId: tab.sheetId, startRowIndex: at, endRowIndex: at + 1, startColumnIndex: 0, endColumnIndex: used },
       rows: [{ values: Array.from({ length: used }, (_, c) => textCell(c === 0 ? text : c === 1 ? who : '')) }],
       fields: 'userEnteredValue,userEnteredFormat.backgroundColor,userEnteredFormat.textFormat.bold',
     } },
     ...(s.doneCol >= 0 ? tickReqs(tab, at, s.doneCol, false) : []),
-    ...(s.deleteCol >= 0 ? tickReqs(tab, at, s.deleteCol, false) : []),
   ]);
   if (anchorRow < 0) return work().then(() => true, e => { toast(errMsg(e), 'error'); return false; });
   return guardedWrite(tab, anchorRow, 0, last ? last.text : s.title, work);
@@ -215,7 +214,7 @@ export function renderSheets(root, ctx) {
   let lastSig = '';
   let pending = false;
   let busy = false;
-  let sheetInfo = { lastRow: -1, doneCol: -1, deleteCol: -1, used: 2, font: null }; // from the last list render, for New section
+  let sheetInfo = { lastRow: -1, doneCol: -1, used: 2, font: null }; // from the last list render, for New section
 
   const prefs = () => store.get('hydra.sheets.prefs', { hideDone: false, mine: false });
   const setPref = (k, v) => { store.set('hydra.sheets.prefs', { ...prefs(), [k]: v }); render(); };
@@ -273,8 +272,8 @@ export function renderSheets(root, ctx) {
 
   // ---------- list mode ----------
   function renderList(p) {
-    const { used, sections, lastRow, doneCol, deleteCol } = parseList(rows);
-    sheetInfo = { lastRow, doneCol, deleteCol, used, font: headingFont(rows, sections) };
+    const { used, sections, lastRow, doneCol } = parseList(rows);
+    sheetInfo = { lastRow, doneCol, used, font: headingFont(rows, sections) };
     const me = initials();
     const show = t => (!p.hideDone || !t.done) && (!p.mine || !me || whoList(t.who).some(w => w === me || w === 'ALL'));
     body.replaceChildren(
@@ -354,7 +353,7 @@ export function renderSheets(root, ctx) {
       const rowCount = active.gridProperties?.rowCount || 1000;
       const reqs = [];
       if (at + 1 > rowCount) reqs.push({ appendDimension: { sheetId: active.sheetId, dimension: 'ROWS', length: at + 1 - rowCount + 20 } });
-      reqs.push(...headingReqs(active, at, Math.max(sheetInfo.used, 2), name.value.trim(), sheetInfo.font, sheetInfo.deleteCol));
+      reqs.push(...headingReqs(active, at, Math.max(sheetInfo.used, 2), name.value.trim(), sheetInfo.font));
       try { await batch(reqs); m.close(); } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; }
       await refresh(true);
     } }, field('Section name', name), btn));

@@ -49,18 +49,19 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 
 ## Sheets rules (TO DO LIST style, ≤3 columns → list view)
 - Bold row with only column A = section heading; column B = initials (`SP/TS`, `ALL`); green fill = done.
-- Optional header row `Task | Who | Done | Delete` (the table = columns up to the first blank header cell;
-  anything to the right, e.g. instructions in column F, is ignored by the app). Delete is a tick box the sheet's
-  Apps Script acts on (removes the row). Rows with no Task text aren't shown.
+- Optional header row `Task | Who | Done` (the table = columns up to the first blank header cell;
+  anything to the right, e.g. instructions in column E, is ignored by the app). People remove tasks by clearing
+  the text or deleting the row in Sheets. Rows with no Task text aren't shown.
 - Header row: the Done column holds tick boxes and the sheet's conditional
   formatting paints ticked rows green. Ticked OR green = done. Tick-box cells read TRUE/FALSE on every row,
   so `parseList` ignores that column when finding headings/empty rows; headings have no tick box.
 - Who is a multi-select chip dropdown (set in the Sheets UI — the API can't set or see that flag, so never
   re-create the B column rule via the API). Write initials as `TS, MR` (`formatWho`).
 - `google-sheet/hydra-sections.gs` is the spreadsheet's Apps Script (onEdit, simple trigger): "New section" in Who
-  (or a bold name with Who empty) → clean heading; initials typed on a heading → back to a task; Delete ticked →
-  row removed. It lives in the sheet (Extensions → Apps Script), so after editing the file, paste it in again.
-  Keep the app's `headingReqs` producing the same result (headings keep their Delete box).
+  (or a bold name with Who empty) → clean heading; initials typed on a heading → back to a task; cleared rows get
+  their drop-down/tick box back; Who column width = 46px + 40px per initial in the busiest row. It lives in the
+  sheet (Extensions → Apps Script), so after editing the file, paste it in again. Keep the app's `headingReqs`
+  producing the same result.
 - Sheets has no table view any more: every tab is a list (extra columns show as small text).
 - `tasks.js` reuses `sheets.js` exports (`parseList`, `isListTab`, `guardedWrite`, `setDone`, `insertTask`) across all list tabs.
 - Initials: `myInitials()` in `google.js` (Settings value, else from the Google name).
