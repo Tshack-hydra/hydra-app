@@ -106,11 +106,13 @@ and their contents.
   - column A = the task, column B = who (`TS`, `SP/TS`, `ALL`)
   - **done** = the row's **Done** tick box is ticked (the sheet then turns the row green by itself), or the row is filled green by hand. The app ticks/unticks the box; on tabs without a Done column it paints the row green instead.
   - An optional header row `Task | Who | Done` (frozen, with initials dropdowns) makes the sheet easy to edit directly.
+  - **Who** allows several initials (pick more than one from the dropdown; stored as `TS, MR`).
+  - **New section in the sheet:** type the name in Task and pick **New section** in Who (or make the name bold with Who empty).
+    The spreadsheet's Apps Script (`google-sheet/hydra-sections.gs`, pasted into Extensions → Apps Script) turns it into a clean heading.
   - *Mine* shows only tasks with your initials (or `ALL`). Your initials come from your Google name (Tom Shackleton → `TS`) unless you set them in Settings. *Hide done* hides the green ones.
   - **+ Add task** inserts a row at the end of that section. **+ New section** adds a bold heading at the bottom.
 - The **Tasks** section reads every list-style tab at once and shows the open tasks for you. Tapping a task opens its tab in Sheets.
 - Wider tabs show as a **table**. Tap any cell to edit it, or use **+ Add row**.
-- You can switch any tab between List and Table using the toggle.
 - Before every change the app re-reads that cell. If someone else has just changed or moved it,
   the app refreshes and asks you to try again, so it never overwrites the wrong row.
 
