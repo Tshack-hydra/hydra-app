@@ -109,6 +109,9 @@ and their contents.
   - **Who** allows several initials (pick more than one from the dropdown; stored as `TS, MR`).
   - **New section in the sheet:** type the name in Task and pick **New section** in Who (or make the name bold with Who empty).
     The spreadsheet's Apps Script (`google-sheet/hydra-sections.gs`, pasted into Extensions → Apps Script) turns it into a clean heading.
+  - **Section by mistake:** type initials in its Who box and it turns back into a task.
+  - **Delete:** tick a row's Delete box and the whole row is removed (Ctrl/Cmd+Z undoes it).
+  - Simple instructions sit in column F. The app only reads the table columns, so they don't appear in the app.
   - *Mine* shows only tasks with your initials (or `ALL`). Your initials come from your Google name (Tom Shackleton → `TS`) unless you set them in Settings. *Hide done* hides the green ones.
   - **+ Add task** inserts a row at the end of that section. **+ New section** adds a bold heading at the bottom.
 - The **Tasks** section reads every list-style tab at once and shows the open tasks for you. Tapping a task opens its tab in Sheets.
