@@ -1,0 +1,4 @@
+.DS_Store
+_test/
+_site/
+.claude/settings.local.json
