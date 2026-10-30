@@ -1,13 +1,13 @@
 // Sheets: live view of every tab in the Hydra spreadsheet. Nothing about the tabs is hard-coded —
 // the tab list and contents are re-read every few seconds, so new tabs/rows/columns just appear.
 //
-// Narrow tabs (≤ 3 columns, like TO DO LIST) show as a task list:
+// Every tab shows as a task list:
 //   bold row with only column A filled = section heading (e.g. "Alo Shanghai")
 //   column A = task, column B = who (initials, "SP/TS", "ALL")
 //   green fill = done (ticking a task paints the row green, like the team does by hand)
 //   optional header row ("Task | Who | Done"): a Done column holds tick boxes, and the sheet's own
 //   conditional formatting paints ticked rows green. Ticked or green both count as done.
-// Wider tabs show as a scrollable table where any cell can be edited.
+// Any extra columns show as small text under the task.
 
 import { CONFIG } from '../config.js';
 import { gfetch, tokenValid, myInitials } from './google.js';
@@ -28,9 +28,6 @@ export const isGreen = bg => {
   const r = bg.red || 0, g = bg.green || 0, b = bg.blue || 0;
   return g > 0.45 && g - r > 0.2 && g - b > 0.2;
 };
-const isWhite = bg => !bg || ((bg.red ?? 0) > 0.98 && (bg.green ?? 0) > 0.98 && (bg.blue ?? 0) > 0.98);
-const bgCss = bg => (isWhite(bg) ? null : `rgb(${Math.round((bg.red || 0) * 255)},${Math.round((bg.green || 0) * 255)},${Math.round((bg.blue || 0) * 255)})`);
-const isDark = bg => !isWhite(bg) && (0.299 * (bg.red || 0) + 0.587 * (bg.green || 0) + 0.114 * (bg.blue || 0)) < 0.55;
 
 export function usedCols(rows) {
   let n = 0;
@@ -71,6 +68,8 @@ export function parseList(rows) {
 }
 
 export const whoList = who => who.toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
+// Same format as the sheet's multi-select Who dropdown ("TS, MR"), so typed initials become chips there
+export const formatWho = who => whoList(who).join(', ');
 
 // ---- API ----
 export async function fetchTabs() {
@@ -85,13 +84,14 @@ async function fetchGrid(tab) {
   return toRows(d.sheets?.[0]?.data?.[0]?.rowData);
 }
 
-const GRID_FIELDS = 'data(rowData(values(formattedValue,hyperlink,effectiveFormat(backgroundColor,textFormat(bold)))))';
+const GRID_FIELDS = 'data(rowData(values(formattedValue,hyperlink,effectiveFormat(backgroundColor,textFormat(bold,fontFamily)))))';
 function toRows(rowData) {
   const rows = (rowData || []).map(r => (r.values || []).map(c => ({
     v: c.formattedValue ?? '',
     link: c.hyperlink || null,
     bg: c.effectiveFormat?.backgroundColor || null,
     bold: !!c.effectiveFormat?.textFormat?.bold,
+    font: c.effectiveFormat?.textFormat?.fontFamily || null,
   })));
   while (rows.length && !rows[rows.length - 1].some(c => c.v)) rows.pop();
   return rows;
@@ -105,8 +105,8 @@ export async function fetchAllGrids(tabs) {
   return new Map((d.sheets || []).map(s => [s.properties.sheetId, toRows(s.data?.[0]?.rowData)]));
 }
 
-// List or table, as the person last chose for this tab, else by width
-export const isListTab = (tab, rows) => (store.get('hydra.sheets.mode.' + tab.sheetId) || (usedCols(rows || []) <= 3 ? 'list' : 'table')) === 'list';
+// Tabs that look like a to-do list (≤ 3 columns) — the Tasks section gathers these from every tab
+export const isListTab = (tab, rows) => usedCols(rows || []) <= 3;
 
 const batch = requests => gfetch(`${API}${sid()}:batchUpdate`, { method: 'POST', body: { requests } });
 const textCell = s => ({ userEnteredValue: { stringValue: s }, userEnteredFormat: { backgroundColor: WHITE, textFormat: { bold: false } } });
@@ -148,6 +148,24 @@ export const setDone = (tab, t, used, done) => batch(t.doneCol >= 0
   ? [...tickReqs(tab, t.row, t.doneCol, done), ...(done ? [] : [paintRow(tab, t.row, used, WHITE)])]
   : [paintRow(tab, t.row, used, done ? GREEN : WHITE)]);
 
+// A section heading row: bold name in A, the rest of the row empty with no tick box or dropdown.
+// Font copied from an existing heading so it matches the sheet.
+export const headingFont = (rows, sections) => {
+  const s = sections.find(x => x.row >= 0);
+  return s ? rows[s.row][0]?.font || null : null;
+};
+const headingReqs = (tab, row, used, name, font) => [
+  { setDataValidation: { range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used } } },
+  { updateCells: {
+    range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used },
+    rows: [{ values: Array.from({ length: used }, (_, c) => ({
+      userEnteredValue: c === 0 ? { stringValue: name } : {},
+      userEnteredFormat: { backgroundColor: WHITE, horizontalAlignment: 'LEFT', textFormat: { bold: c === 0, ...(font ? { fontFamily: font } : {}) } },
+    })) }],
+    fields: 'userEnteredValue,userEnteredFormat.backgroundColor,userEnteredFormat.horizontalAlignment,userEnteredFormat.textFormat.bold' + (font ? ',userEnteredFormat.textFormat.fontFamily' : ''),
+  } },
+];
+
 // Insert a task as a new row under the last task of section s (guarded on that anchor row)
 export function insertTask(tab, s, used, text, who) {
   const last = s.tasks[s.tasks.length - 1];
@@ -183,11 +201,10 @@ export function renderSheets(root, ctx) {
   let lastSig = '';
   let pending = false;
   let busy = false;
-  let sheetInfo = { lastRow: -1, doneCol: -1 }; // from the last list render, for New section
+  let sheetInfo = { lastRow: -1, doneCol: -1, used: 2, font: null }; // from the last list render, for New section
 
   const prefs = () => store.get('hydra.sheets.prefs', { hideDone: false, mine: false });
   const setPref = (k, v) => { store.set('hydra.sheets.prefs', { ...prefs(), [k]: v }); render(); };
-  const modeFor = tab => (isListTab(tab, rows) ? 'list' : 'table');
   const initials = myInitials;
 
   async function refresh(force) {
@@ -230,24 +247,20 @@ export function renderSheets(root, ctx) {
 
   function render() {
     if (!rows || !active) return;
-    const mode = modeFor(active);
     const p = prefs();
     fill(tools,
-      h('div', { class: 'seg' },
-        h('button', { class: mode === 'list' ? 'on' : '', onclick: () => { store.set('hydra.sheets.mode.' + active.sheetId, 'list'); render(); } }, 'List'),
-        h('button', { class: mode === 'table' ? 'on' : '', onclick: () => { store.set('hydra.sheets.mode.' + active.sheetId, 'table'); render(); } }, 'Table')),
-      mode === 'list' && initials() ? h('button', { class: 'chip' + (p.mine ? '' : ' off'), onclick: () => setPref('mine', !p.mine) }, `Mine (${initials()})`) : null,
-      mode === 'list' ? h('button', { class: 'chip' + (p.hideDone ? '' : ' off'), onclick: () => setPref('hideDone', !p.hideDone) }, 'Hide Done') : null);
+      initials() ? h('button', { class: 'chip' + (p.mine ? '' : ' off'), onclick: () => setPref('mine', !p.mine) }, `Mine (${initials()})`) : null,
+      h('button', { class: 'chip' + (p.hideDone ? '' : ' off'), onclick: () => setPref('hideDone', !p.hideDone) }, 'Hide Done'));
     ctx.actions(
       h('button', { class: 'nav-icon', 'aria-label': 'Refresh now', onclick: () => refresh(true) }, icon('refresh')),
       h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, icon('external')));
-    if (mode === 'list') renderList(p); else renderTable();
+    renderList(p);
   }
 
   // ---------- list mode ----------
   function renderList(p) {
     const { used, sections, lastRow, doneCol } = parseList(rows);
-    sheetInfo = { lastRow, doneCol };
+    sheetInfo = { lastRow, doneCol, used, font: headingFont(rows, sections) };
     const me = initials();
     const show = t => (!p.hideDone || !t.done) && (!p.mine || !me || whoList(t.who).some(w => w === me || w === 'ALL'));
     body.replaceChildren(
@@ -282,13 +295,13 @@ export function renderSheets(root, ctx) {
 
   function taskForm({ text = '', who = '', submit, extraButtons = [] }) {
     const ta = h('textarea', { rows: 3, required: true }, text);
-    const wi = h('input', { type: 'text', value: who, placeholder: 'e.g. TS or SP/TS or ALL', autocapitalize: 'characters' });
+    const wi = h('input', { type: 'text', value: who, placeholder: 'e.g. TS, or TS MR, or ALL', autocapitalize: 'characters' });
     const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Save');
     const form = h('form', { class: 'form', onsubmit: async e => {
       e.preventDefault();
       if (!ta.value.trim()) return;
       btn.disabled = true;
-      await submit(ta.value.trim(), wi.value.trim().toUpperCase());
+      await submit(ta.value.trim(), formatWho(wi.value));
     } }, field('Task', ta), field('Who', wi), btn, h('div', { class: 'actions' }, extraButtons));
     setTimeout(() => ta.focus(), 50);
     return form;
@@ -327,63 +340,11 @@ export function renderSheets(root, ctx) {
       const rowCount = active.gridProperties?.rowCount || 1000;
       const reqs = [];
       if (at + 1 > rowCount) reqs.push({ appendDimension: { sheetId: active.sheetId, dimension: 'ROWS', length: at + 1 - rowCount + 20 } });
-      reqs.push({ updateCells: {
-        range: { sheetId: active.sheetId, startRowIndex: at, endRowIndex: at + 1, startColumnIndex: 0, endColumnIndex: 1 },
-        rows: [{ values: [{ userEnteredValue: { stringValue: name.value.trim() }, userEnteredFormat: { textFormat: { bold: true }, horizontalAlignment: 'CENTER', backgroundColor: WHITE } }] }],
-        fields: 'userEnteredValue,userEnteredFormat(textFormat.bold,horizontalAlignment,backgroundColor)',
-      } });
-      // a heading has no tick box
-      if (sheetInfo.doneCol >= 0) reqs.push({ setDataValidation: { range: { sheetId: active.sheetId, startRowIndex: at, endRowIndex: at + 1, startColumnIndex: sheetInfo.doneCol, endColumnIndex: sheetInfo.doneCol + 1 } } });
+      reqs.push(...headingReqs(active, at, Math.max(sheetInfo.used, 2), name.value.trim(), sheetInfo.font));
       try { await batch(reqs); m.close(); } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; }
       await refresh(true);
     } }, field('Section name', name), btn));
     setTimeout(() => name.focus(), 50);
-  }
-
-  // ---------- table mode ----------
-  function renderTable() {
-    const used = Math.max(usedCols(rows), 1);
-    const table = h('table', { class: 'grid' },
-      h('thead', {}, h('tr', {}, h('th', { class: 'rn' }, ''), Array.from({ length: used }, (_, c) => h('th', { class: 'cl' }, colLetter(c))))),
-      h('tbody', {}, rows.map((r, i) => h('tr', {},
-        h('th', { class: 'rn' }, i + 1),
-        Array.from({ length: used }, (_, c) => {
-          const cell = r[c] || { v: '' };
-          return h('td', {
-            class: (cell.bold ? 'b ' : '') + (isDark(cell.bg) ? 'dark' : ''),
-            style: { background: bgCss(cell.bg) },
-            onclick: () => editCell(i, c, cell),
-          }, cell.link ? h('a', { href: cell.link, target: '_blank', rel: 'noopener', onclick: e => e.stopPropagation() }, cell.v || cell.link) : cell.v);
-        })))));
-    body.replaceChildren(h('div', { class: 'grid-wrap' }, table), h('button', { class: 'btn block', onclick: () => addRow(used) }, '+ Add row'));
-  }
-
-  function editCell(r, c, cell) {
-    const ta = h('textarea', { rows: 4 }, cell.v);
-    const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Save');
-    const m = dialog(`${active.title} · ${colLetter(c)}${r + 1}`, h('form', { class: 'form', onsubmit: async e => {
-      e.preventDefault();
-      btn.disabled = true;
-      m.close();
-      await guarded(r, c, cell.v, () => gfetch(`${API}${sid()}/values/${encodeURIComponent(a1(active, r, c))}?valueInputOption=USER_ENTERED`, { method: 'PUT', body: { values: [[ta.value]] } }));
-    } }, ta, h('small', { class: 'hint' }, 'Numbers, dates and formulas work like typing in Google Sheets.'), btn));
-    setTimeout(() => ta.focus(), 50);
-  }
-
-  function addRow(used) {
-    const headers = rows[0] || [];
-    const inputs = Array.from({ length: used }, (_, c) => h('input', { type: 'text' }));
-    const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Add row');
-    const m = dialog(`Add row · ${active.title}`, h('form', { class: 'form', onsubmit: async e => {
-      e.preventDefault();
-      btn.disabled = true;
-      try {
-        await gfetch(`${API}${sid()}/values/${encodeURIComponent(quote(active.title) + '!A1')}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-          { method: 'POST', body: { values: [inputs.map(i => i.value)] } });
-        m.close();
-      } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; }
-      await refresh(true);
-    } }, inputs.map((inp, c) => field(headers[c]?.v || `Column ${colLetter(c)}`, inp)), btn));
   }
 
   refresh(true);

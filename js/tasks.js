@@ -8,7 +8,7 @@ import { CONFIG } from '../config.js';
 import { tokenValid, myInitials } from './google.js';
 import { icon } from './icons.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
-import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, guardedWrite, setDone, insertTask } from './sheets.js';
+import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, formatWho, guardedWrite, setDone, insertTask } from './sheets.js';
 
 export function renderTasks(root, ctx) {
   if (!CONFIG.spreadsheetId) {
@@ -122,7 +122,7 @@ export function renderTasks(root, ctx) {
     const lastKey = store.get('hydra.tasks.lastTarget');
     const where = h('select', {}, targets.map(t => h('option', { value: t.key, selected: t.label === lastKey }, t.label)));
     const ta = h('textarea', { rows: 3, required: true });
-    const wi = h('input', { type: 'text', value: me(), placeholder: 'e.g. TS or SP/TS or ALL', autocapitalize: 'characters' });
+    const wi = h('input', { type: 'text', value: me(), placeholder: 'e.g. TS, or TS MR, or ALL', autocapitalize: 'characters' });
     const btn = h('button', { class: 'btn primary block', type: 'submit', 'data-bar': 'Add' }, 'Add task');
     const m = dialog('New task', h('form', { class: 'form', onsubmit: async e => {
       e.preventDefault();
@@ -131,7 +131,7 @@ export function renderTasks(root, ctx) {
       const t = targets.find(x => x.key === where.value);
       store.set('hydra.tasks.lastTarget', t.label);
       m.close();
-      await insertTask(t.l.tab, t.s, t.l.used, ta.value.trim(), wi.value.trim().toUpperCase());
+      await insertTask(t.l.tab, t.s, t.l.used, ta.value.trim(), formatWho(wi.value));
       await refresh(true);
     } }, field('Task', ta), field('Who', wi), field('List', where), btn));
     setTimeout(() => ta.focus(), 50);

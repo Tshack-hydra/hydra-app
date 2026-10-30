@@ -52,6 +52,11 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Optional header row `Task | Who | Done`: the Done column holds tick boxes and the sheet's conditional
   formatting paints ticked rows green. Ticked OR green = done. Tick-box cells read TRUE/FALSE on every row,
   so `parseList` ignores that column when finding headings/empty rows; headings have no tick box.
+- Who is a multi-select chip dropdown (set in the Sheets UI — the API can't set or see that flag, so never
+  re-create the B column rule via the API). Write initials as `TS, MR` (`formatWho`).
+- `google-sheet/hydra-sections.gs` is the spreadsheet's Apps Script (onEdit): "New section" in Who, or a bold
+  name with Who empty, becomes a clean heading. Keep the app's `headingReqs` producing the same result.
+- Sheets has no table view any more: every tab is a list (extra columns show as small text).
 - `tasks.js` reuses `sheets.js` exports (`parseList`, `isListTab`, `guardedWrite`, `setDone`, `insertTask`) across all list tabs.
 - Initials: `myInitials()` in `google.js` (Settings value, else from the Google name).
 - Every write re-reads the target cell first (`guarded`) and aborts if it changed — keep that for new writes.
