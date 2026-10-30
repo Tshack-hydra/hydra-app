@@ -6,10 +6,12 @@
 //   • New section: type the name in Task and choose "New section" in Who
 //     (or make the name bold with Who empty). The row becomes a clean bold heading.
 //   • Section by mistake: type initials in its Who box. It becomes a normal task again.
-//   • Cleared rows (text deleted) get their Who drop-down and Done box back, unticked.
+//   • Cleared rows (text deleted) get their Who emptied and their drop-down and Done box back, unticked.
+//   • Every task row is 28px tall so the initials chips have room.
 //   • The Who column is only as wide as the most initials in any one row.
 
 const SECTION_CHOICE = 'new section';
+const ROW_PX = 28; // roomy rows so the initials chips aren't cramped
 
 function onEdit(e) {
   const sheet = e.range.getSheet();
@@ -55,7 +57,8 @@ function tidy_(sheet, cols) {
     const doneVal = cols.done ? String(row[cols.done - 1]).trim() : '';
 
     if (!name) {
-      // Text cleared: make it a normal empty row again
+      // Text cleared: make it a normal empty row again, and empty its Who
+      if (who) { sheet.getRange(r, cols.who).clearContent(); row[cols.who - 1] = ''; }
       if (blank(i) && model >= 0 && model !== i && (!hasSetup(i) || doneVal === 'TRUE' || bold)) makeTask_(sheet, r, cols, model + 2, '');
       return;
     }
@@ -70,6 +73,7 @@ function tidy_(sheet, cols) {
     }
   });
 
+  sheet.setRowHeights(2, n, ROW_PX);
   fitWho_(sheet, cols);
 }
 
