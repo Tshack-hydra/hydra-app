@@ -31,9 +31,8 @@ export function renderTasks(root, ctx) {
   const me = myInitials;
   const forMe = t => whoList(t.who).some(w => w === me() || w === 'ALL');
 
-  ctx.actions(
-    h('button', { class: 'nav-icon', 'aria-label': 'Refresh now', onclick: () => refresh(true) }, icon('refresh')),
-    h('button', { class: 'nav-icon tint', 'aria-label': 'New task', onclick: () => addTask() }, icon('plus')));
+  ctx.actions(h('button', { class: 'nav-icon tint', 'aria-label': 'New task', onclick: () => addTask() }, icon('plus')));
+  ctx.onRefresh(() => refresh(true));
 
   async function refresh(force) {
     if (busy && !force) return;
@@ -66,7 +65,7 @@ export function renderTasks(root, ctx) {
     fill(tools, h('div', { class: 'seg' },
       h('button', { class: mine ? 'on' : '', onclick: () => { store.set('hydra.tasks.who', 'mine'); render(); } }, me() ? `Mine (${me()})` : 'Mine'),
       h('button', { class: mine ? '' : 'on', onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'Everyone')),
-      h('button', { class: 'chip' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, hideDone() ? 'Show Done' : 'Hide Done'));
+      h('button', { class: 'chip end' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, hideDone() ? 'Show Done' : 'Hide Done'));
 
     if (mine && !me()) {
       fill(body, h('section', { class: 'card center' },

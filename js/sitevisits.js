@@ -73,6 +73,7 @@ export function renderSiteVisits(root, ctx) {
   let job = store.get('hydra.visits.lastJob');
   const newVisit = () => visitForm(job, saved => { if (saved.path === job?.path) load(); });
   ctx.actions(h('button', { class: 'nav-icon tint', 'aria-label': 'New site visit', onclick: newVisit }, icon('plus')));
+  ctx.onRefresh(() => load());
   const listEl = h('div', { class: 'visit-list' });
   const picker = jobPicker({ value: job, onChange: j => { job = j; store.set('hydra.visits.lastJob', j); load(); } });
 

@@ -82,7 +82,11 @@ export function parseList(rows) {
 // An initials tag coloured like that person's chip in the sheet (CONFIG.teamColours)
 export const initialsTag = w => h('span', { class: 'initials tag-' + (CONFIG.teamColours?.[w] || 'gray') }, w);
 
-export const whoList = who => who.toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
+// "ALL" means everyone, so it never sits alongside individual initials
+export const whoList = who => {
+  const list = who.toUpperCase().split(/[\/,&+\s]+/).filter(Boolean);
+  return list.includes('ALL') ? ['ALL'] : list;
+};
 // Same format as the sheet's multi-select Who dropdown ("TS, MR"), so typed initials become chips there
 export const formatWho = who => whoList(who).join(', ');
 
@@ -266,9 +270,8 @@ export function renderSheets(root, ctx) {
     const p = prefs();
     fill(tools,
       initials() ? h('button', { class: 'chip' + (p.mine ? '' : ' off'), onclick: () => setPref('mine', !p.mine) }, `Mine (${initials()})`) : null,
-      h('button', { class: 'chip' + (p.hideDone ? '' : ' off'), 'aria-pressed': String(p.hideDone), onclick: () => setPref('hideDone', !p.hideDone) }, p.hideDone ? 'Show Done' : 'Hide Done'));
+      h('button', { class: 'chip end' + (p.hideDone ? '' : ' off'), 'aria-pressed': String(p.hideDone), onclick: () => setPref('hideDone', !p.hideDone) }, p.hideDone ? 'Show Done' : 'Hide Done'));
     ctx.actions(
-      h('button', { class: 'nav-icon', 'aria-label': 'Refresh now', onclick: () => refresh(true) }, icon('refresh')),
       h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, icon('external')));
     renderList(p);
   }
@@ -363,6 +366,7 @@ export function renderSheets(root, ctx) {
     setTimeout(() => name.focus(), 50);
   }
 
+  ctx.onRefresh(() => refresh(true));
   refresh(true);
   const timer = setInterval(() => {
     if (document.visibilityState === 'visible' && tokenValid(5 * 60_000)) refresh();

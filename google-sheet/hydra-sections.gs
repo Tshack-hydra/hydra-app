@@ -9,6 +9,8 @@
 //   • Cleared rows (text deleted) get their Who emptied and their drop-down and Done box back, unticked.
 //   • Every task row is 28px tall so the initials chips have room.
 //   • The Who column is only as wide as the most initials in any one row.
+//   • ALL means everyone, so it never sits with individual initials: picking ALL clears the others,
+//     and picking someone while ALL is set replaces ALL.
 
 const SECTION_CHOICE = 'new section';
 const ROW_PX = 28; // roomy rows so the initials chips aren't cramped
@@ -16,7 +18,22 @@ const ROW_PX = 28; // roomy rows so the initials chips aren't cramped
 function onEdit(e) {
   const sheet = e.range.getSheet();
   const cols = columns_(sheet);
-  if (cols) tidy_(sheet, cols);
+  if (!cols) return;
+  allOrPeople_(cols, e);
+  tidy_(sheet, cols);
+}
+
+const initials_ = v => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
+const isAll_ = w => w.toUpperCase() === 'ALL';
+
+// One Who box changed: if ALL was just picked keep only ALL; if a person was added to ALL, drop ALL
+function allOrPeople_(cols, e) {
+  const cell = e.range;
+  if (!cols.who || cell.getNumRows() !== 1 || cell.getNumColumns() !== 1 || cell.getColumn() !== cols.who || cell.getRow() < 2) return;
+  const now = initials_(cell.getDisplayValue());
+  if (now.length < 2 || !now.some(isAll_)) return;
+  const hadAll = initials_(e.oldValue).some(isAll_);
+  cell.setValue(hadAll ? now.filter(w => !isAll_(w)).join(', ') : 'ALL');
 }
 
 function onOpen() {
@@ -63,6 +80,8 @@ function tidy_(sheet, cols) {
       return;
     }
     const picked = who.toLowerCase().split(/\s*,\s*/).includes(SECTION_CHOICE);
+    // ALL alongside individual initials (e.g. pasted in): ALL wins
+    if (!picked && cols.who && initials_(who).length > 1 && initials_(who).some(isAll_)) sheet.getRange(r, cols.who).setValue('ALL');
     const whoRule = cols.who ? rules[i][cols.who - 1] : null;
     const doneRule = cols.done ? rules[i][cols.done - 1] : null;
     if (picked || (bold && !who && (whoRule || doneRule || doneVal))) {

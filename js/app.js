@@ -1,7 +1,7 @@
 // App start-up and routing (#/calendar, #/tasks, #/sheets, #/visits, #/receipts, #/settings).
 
 import { CONFIG } from '../config.js';
-import { h, toast, errMsg, spinner, isModalOpen } from './util.js';
+import { h, toast, errMsg, spinner, activity, isModalOpen } from './util.js';
 import * as google from './google.js';
 import * as dbx from './dropbox.js';
 import { renderCalendar } from './calendar.js';
@@ -48,7 +48,10 @@ function route() {
       navActions.replaceChildren(...els.filter(e => !primary.includes(e)));
       navPrimary.replaceChildren(...primary);
     },
+    // Pull down from the top of the page to reload (instead of a refresh button)
+    onRefresh(fn) { refreshFn = fn; },
   };
+  refreshFn = null;
   if (key !== 'settings') lastTab = key;
   document.querySelectorAll('.tabbar a').forEach(a => {
     const on = a.dataset.route === lastTab;
@@ -120,6 +123,42 @@ async function boot() {
     if (document.visibilityState === 'visible' && !isModalOpen()) google.ensureFresh(15);
   });
 }
+
+// ---- pull to refresh (as in Mail, Reminders…): pull the page down from the top past the line ----
+let refreshFn = null;
+const ptr = h('div', { class: 'ptr', 'aria-hidden': 'true' }, activity());
+document.body.append(ptr);
+(() => {
+  const TRIGGER = 70; // px of pull (after resistance) that starts a refresh
+  let startY = null, pull = 0, busy = false;
+  const show = d => {
+    pull = d;
+    ptr.style.setProperty('--pull', d + 'px');
+    ptr.style.setProperty('--turn', Math.round(d * 4) + 'deg');
+    ptr.classList.toggle('on', d > 4);
+    ptr.classList.toggle('ready', d >= TRIGGER);
+  };
+  addEventListener('touchstart', e => {
+    startY = !busy && refreshFn && !isModalOpen() && scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+  }, { passive: true });
+  addEventListener('touchmove', e => {
+    if (startY == null) return;
+    const dy = e.touches[0].clientY - startY;
+    show(dy > 0 && scrollY <= 0 ? Math.min(dy * 0.5, TRIGGER * 1.6) : 0);
+  }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (startY == null) return;
+    startY = null;
+    if (pull < TRIGGER) { show(0); return; }
+    busy = true;
+    ptr.classList.add('busy');
+    show(TRIGGER);
+    try { await refreshFn?.(); } catch { /* the section shows its own error */ }
+    busy = false;
+    ptr.classList.remove('busy');
+    show(0);
+  });
+})();
 
 // ---- updates: a new publish installs in the background, then we offer to switch to it ----
 function showUpdateBanner(worker) {
