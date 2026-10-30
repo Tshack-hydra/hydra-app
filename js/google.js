@@ -22,8 +22,12 @@ export function handleGoogleRedirect() {
   const p = new URLSearchParams(hash);
   const back = sessionStorage.getItem('hydra.google.return') || '#/calendar';
   const expected = sessionStorage.getItem('hydra.google.state');
+  const wasSilent = sessionStorage.getItem('hydra.google.silent') === '1';
   sessionStorage.removeItem('hydra.google.state');
+  sessionStorage.removeItem('hydra.google.silent');
   history.replaceState(null, '', redirectUri() + back);
+  // A silent renewal Google couldn't complete (signed out of Google, or it wants a tap): ask properly once
+  if (wasSilent && SILENT_FAILS.includes(p.get('error'))) { signIn(); return 'Renewing Google sign-in…'; }
   if (p.get('error')) return `Google sign-in failed: ${p.get('error')}`;
   if (!expected || p.get('state') !== expected) return 'Google sign-in failed: state mismatch, please try again';
   store.set(TOKEN, {
@@ -33,9 +37,19 @@ export function handleGoogleRedirect() {
   return null;
 }
 
-export function signIn() {
+const SILENT_FAILS = ['interaction_required', 'login_required', 'consent_required', 'account_selection_required'];
+
+// silent: renew without showing any Google screen (prompt=none). Google sends the person straight back
+// while they're still signed in to Google on this phone; if not, handleGoogleRedirect falls back to signIn().
+let redirecting = false;
+export const isRedirecting = () => redirecting;
+
+export function signIn({ silent = false } = {}) {
+  if (redirecting) return; // one trip to Google at a time
+  redirecting = true;
   const state = crypto.randomUUID();
   sessionStorage.setItem('hydra.google.state', state);
+  sessionStorage.setItem('hydra.google.silent', silent ? '1' : '0');
   sessionStorage.setItem('hydra.google.return', location.hash.startsWith('#/') ? location.hash : '#/calendar');
   const params = new URLSearchParams({
     client_id: CONFIG.googleClientId,
@@ -47,8 +61,10 @@ export function signIn() {
   });
   if (CONFIG.workspaceDomain) params.set('hd', CONFIG.workspaceDomain);
   const user = store.get(USER);
-  if (user?.email) params.set('login_hint', user.email);
-  else params.set('prompt', 'select_account');
+  if (user?.email) {
+    params.set('login_hint', user.email);
+    if (silent) params.set('prompt', 'none');
+  } else params.set('prompt', 'select_account');
   location.assign('https://accounts.google.com/o/oauth2/v2/auth?' + params);
 }
 
@@ -70,12 +86,12 @@ export function tokenValid(marginMs = 60_000) {
 // Google tokens last an hour. Renew on navigation (when nothing is half-typed) if it's close
 // to expiring. Returns false if a redirect has started.
 export function ensureFresh(minutes = 15) {
-  if (hasSession() && !tokenValid(minutes * 60_000)) { signIn(); return false; }
+  if (hasSession() && !tokenValid(minutes * 60_000)) { signIn({ silent: true }); return false; }
   return true;
 }
 
 export async function gfetch(url, opts = {}) {
-  if (!tokenValid()) { signIn(); throw new Error('Renewing Google sign-in…'); }
+  if (!tokenValid()) { signIn({ silent: true }); throw new Error('Renewing Google sign-in…'); }
   const { accessToken } = store.get(TOKEN);
   const headers = { Authorization: 'Bearer ' + accessToken, ...opts.headers };
   let body = opts.body;
@@ -84,7 +100,7 @@ export async function gfetch(url, opts = {}) {
     headers['Content-Type'] = 'application/json';
   }
   const res = await fetch(url, { ...opts, headers, body });
-  if (res.status === 401) { store.del(TOKEN); signIn(); throw new Error('Renewing Google sign-in…'); }
+  if (res.status === 401) { store.del(TOKEN); signIn({ silent: true }); throw new Error('Renewing Google sign-in…'); }
   if (!res.ok) {
     let msg = '';
     try { msg = (await res.json()).error?.message; } catch { /* not JSON */ }

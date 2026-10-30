@@ -1,7 +1,7 @@
 // App start-up and routing (#/calendar, #/tasks, #/sheets, #/visits, #/receipts, #/settings).
 
 import { CONFIG } from '../config.js';
-import { h, toast, errMsg, spinner } from './util.js';
+import { h, toast, errMsg, spinner, isModalOpen } from './util.js';
 import * as google from './google.js';
 import * as dbx from './dropbox.js';
 import { renderCalendar } from './calendar.js';
@@ -78,6 +78,7 @@ function showGate(...content) {
 
 async function boot() {
   const gErr = google.handleGoogleRedirect();
+  if (google.isRedirecting()) { showGate(spinner('Signing in…')); return; }
   try { await dbx.handleDropboxRedirect(); } catch (e) { toast(errMsg(e), 'error'); }
 
   const missing = ['googleClientId', 'spreadsheetId', 'dropboxAppKey'].filter(k => !CONFIG[k]);
@@ -113,6 +114,11 @@ async function boot() {
   document.body.classList.remove('gated');
   window.addEventListener('hashchange', route);
   route();
+  // Renew the hour-long Google token as the app comes back to the front, so it never runs out mid-task
+  // (silent: no Google screen while the phone is still signed in to Google). Not while a form is open.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && !isModalOpen()) google.ensureFresh(15);
+  });
 }
 
 // ---- updates: a new publish installs in the background, then we offer to switch to it ----
