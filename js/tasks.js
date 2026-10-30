@@ -2,7 +2,8 @@
 // spreadsheet, so you don't have to open each tab. The sheet stays the only copy — ticking here paints
 // the row green there, and rows added by anyone (or by Claude) appear on the next refresh.
 //
-// A tab counts as a task list when the Sheets section shows it as a List (≤ 3 columns, or switched to List).
+// A tab counts as a task list when it has a "Task | Who | Done" header, or ≤ 3 columns. Done tasks stay
+// in the list (struck through) unless "Hide Done" is on.
 
 import { CONFIG } from '../config.js';
 import { tokenValid, myInitials } from './google.js';
@@ -15,7 +16,7 @@ export function renderTasks(root, ctx) {
     root.append(h('p', { class: 'error' }, 'No spreadsheet set — add spreadsheetId to config.js.'));
     return;
   }
-  const tools = h('div', { class: 'toolbar' });
+  const tools = h('div', { class: 'toolbar wrap' });
   const body = h('div', { class: 'sheet-view' }, spinner());
   const status = h('div', { class: 'sync muted small' });
   root.append(tools, body, status);
@@ -26,6 +27,7 @@ export function renderTasks(root, ctx) {
   let busy = false;
 
   const who = () => store.get('hydra.tasks.who', 'mine');
+  const hideDone = () => store.get('hydra.tasks.hideDone', false);
   const me = myInitials;
   const forMe = t => whoList(t.who).some(w => w === me() || w === 'ALL');
 
@@ -63,7 +65,8 @@ export function renderTasks(root, ctx) {
     const mine = who() === 'mine';
     fill(tools, h('div', { class: 'seg' },
       h('button', { class: mine ? 'on' : '', onclick: () => { store.set('hydra.tasks.who', 'mine'); render(); } }, me() ? `Mine (${me()})` : 'Mine'),
-      h('button', { class: mine ? '' : 'on', onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'Everyone')));
+      h('button', { class: mine ? '' : 'on', onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'Everyone')),
+      h('button', { class: 'chip' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, 'Hide Done'));
 
     if (mine && !me()) {
       fill(body, h('section', { class: 'card center' },
@@ -76,37 +79,44 @@ export function renderTasks(root, ctx) {
       return;
     }
 
-    const show = t => !t.done && (!mine || forMe(t));
+    const show = t => (!hideDone() || !t.done) && (!mine || forMe(t));
     const groups = [];
     for (const l of lists) for (const s of l.sections) {
       const tasks = s.tasks.filter(show);
       if (tasks.length) groups.push({ l, s, tasks });
     }
     if (!groups.length) {
-      fill(body, h('section', { class: 'card center' }, h('p', {}, mine ? `Nothing open for ${me()}.` : 'No open tasks.')));
+      fill(body, h('section', { class: 'card center' }, h('p', {}, mine ? `Nothing ${hideDone() ? 'open ' : ''}for ${me()}.` : hideDone() ? 'No open tasks.' : 'No tasks.')));
       return;
     }
     // Show the tab name only when there's more than one task list, so a single TO DO tab reads cleanly
     const many = lists.length > 1;
     fill(body, groups.map(({ l, s, tasks }) => h('section', { class: 'task-section' },
-      h('h3', {}, [many ? l.tab.title : '', s.title].filter(Boolean).join(' · ') || 'Tasks', h('span', { class: 'count' }, `${tasks.length} open`)),
+      h('h3', {}, [many ? l.tab.title : '', s.title].filter(Boolean).join(' · ') || 'Tasks', h('span', { class: 'count' }, openCount(tasks))),
       tasks.map(t => taskRow(l, t)))));
   }
 
+  const openCount = tasks => {
+    const open = tasks.filter(t => !t.done).length;
+    return open ? `${open} open` : 'all done';
+  };
+
   function taskRow(l, t) {
-    return h('div', { class: 'task' },
-      h('button', { class: 'tick', 'aria-label': 'Mark done', onclick: e => markDone(e.currentTarget, l, t) }, ''),
+    return h('div', { class: 'task' + (t.done ? ' done' : '') },
+      h('button', { class: 'tick', 'aria-label': t.done ? 'Mark not done' : 'Mark done', onclick: e => toggleDone(e.currentTarget, l, t) }, t.done ? '✓' : ''),
       h('button', { class: 'task-text', onclick: () => openInSheets(l.tab) },
         h('span', {}, t.text || h('i', { class: 'muted' }, '(blank)')),
         t.extra.length ? h('small', { class: 'muted' }, t.extra.join(' · ')) : null),
       h('span', { class: 'who' }, whoList(t.who).map(w => h('span', { class: 'initials' }, w))));
   }
 
-  async function markDone(btn, l, t) {
+  // Ticked tasks stay in the list (struck through) unless Hide Done is on; tap again to untick
+  async function toggleDone(btn, l, t) {
+    const done = !t.done;
     btn.disabled = true;
-    btn.closest('.task').classList.add('done');
-    btn.textContent = '✓';
-    if (await guardedWrite(l.tab, t.row, 0, t.text, () => setDone(l.tab, t, l.used, true))) toast('Done');
+    btn.closest('.task').classList.toggle('done', done);
+    btn.textContent = done ? '✓' : '';
+    if (await guardedWrite(l.tab, t.row, 0, t.text, () => setDone(l.tab, t, l.used, done))) toast(done ? 'Done' : 'Not done');
     await refresh(true);
   }
 
