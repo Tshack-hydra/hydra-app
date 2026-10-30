@@ -49,6 +49,9 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 
 ## Sheets rules (TO DO LIST style, ≤3 columns → list view)
 - Bold row with only column A = section heading; column B = initials (`SP/TS`, `ALL`); green fill = done.
+- Optional header row `Task | Who | Done`: the Done column holds tick boxes and the sheet's conditional
+  formatting paints ticked rows green. Ticked OR green = done. Tick-box cells read TRUE/FALSE on every row,
+  so `parseList` ignores that column when finding headings/empty rows; headings have no tick box.
 - `tasks.js` reuses `sheets.js` exports (`parseList`, `isListTab`, `guardedWrite`, `setDone`, `insertTask`) across all list tabs.
 - Initials: `myInitials()` in `google.js` (Settings value, else from the Google name).
 - Every write re-reads the target cell first (`guarded`) and aborts if it changed — keep that for new writes.

@@ -104,7 +104,8 @@ and their contents.
 - Tabs with **3 columns or fewer** (like TO DO LIST) show as a **task list**:
   - a **bold** row with only column A filled = a section heading (e.g. *Alo Shanghai*)
   - column A = the task, column B = who (`TS`, `SP/TS`, `ALL`)
-  - **green fill = done**. Ticking a task in the app paints columns A–B green, exactly as you do by hand, and un-ticking makes them white again.
+  - **done** = the row's **Done** tick box is ticked (the sheet then turns the row green by itself), or the row is filled green by hand. The app ticks/unticks the box; on tabs without a Done column it paints the row green instead.
+  - An optional header row `Task | Who | Done` (frozen, with initials dropdowns) makes the sheet easy to edit directly.
   - *Mine* shows only tasks with your initials (or `ALL`). Your initials come from your Google name (Tom Shackleton → `TS`) unless you set them in Settings. *Hide done* hides the green ones.
   - **+ Add task** inserts a row at the end of that section. **+ New section** adds a bold heading at the bottom.
 - The **Tasks** section reads every list-style tab at once and shows the open tasks for you. Tapping a task opens its tab in Sheets.
