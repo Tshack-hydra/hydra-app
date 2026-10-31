@@ -60,7 +60,10 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - `google-sheet/hydra-sections.gs` is the spreadsheet's Apps Script (onEdit, simple trigger): "New section" in Who
   (or a bold name with Who empty) → clean heading; initials typed on a heading → back to a task; cleared rows get
   their drop-down/tick box back; Who column width = 46px + 40px per initial in the busiest row. It lives in the
-  sheet (Extensions → Apps Script), so after editing the file, paste it in again. Keep the app's `headingReqs`
+  sheet (Extensions → Apps Script), so after editing the file, paste it in again. Each section heading (except
+  the first under the header) has a totally blank gap row above it (no validation); the script adds it and deletes
+  it (and the cleared heading) when the heading goes. The app's New section writes the same gap (`gapReqs`).
+  The instructions are one merged cell (E2:E12) so whole-row inserts/deletes don't scatter them. Keep the app's `headingReqs`
   producing the same result.
 - Sheets has no table view any more: every tab is a list (extra columns show as small text).
 - Initials tags use `CONFIG.teamColours` (Google's chip palette, `.tag-*` in styles.css). The Sheets API doesn't

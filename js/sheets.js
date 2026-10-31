@@ -193,6 +193,16 @@ export function showDoneLocally(rows, t, done) {
   if (t.doneCol < 0 || !done) [0, 1].forEach(c => { cell(c).bg = done ? GREEN : null; });
 }
 
+// The totally blank row above a section heading: no values, no drop-down, no tick box
+const gapReqs = (tab, row, used) => [
+  { setDataValidation: { range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used } } },
+  { updateCells: {
+    range: { sheetId: tab.sheetId, startRowIndex: row, endRowIndex: row + 1, startColumnIndex: 0, endColumnIndex: used },
+    rows: [{ values: Array.from({ length: used }, () => ({ userEnteredValue: {}, userEnteredFormat: { backgroundColor: WHITE } })) }],
+    fields: 'userEnteredValue,userEnteredFormat.backgroundColor',
+  } },
+];
+
 // Insert a task as a new row under the last task of section s (guarded on that anchor row)
 export function insertTask(tab, s, used, text, who) {
   const last = s.tasks[s.tasks.length - 1];
@@ -295,7 +305,7 @@ export function renderSheets(root, ctx) {
   // ---------- list mode ----------
   function renderList(p) {
     const { used, sections, lastRow, doneCol } = parseList(rows);
-    sheetInfo = { lastRow, doneCol, used, font: headingFont(rows, sections) };
+    sheetInfo = { lastRow, doneCol, used, hasHeader: tableShape(rows).header === 0, font: headingFont(rows, sections) };
     const me = initials();
     const show = t => (!p.hideDone || !t.done) && (!p.mine || !me || whoList(t.who).some(w => w === me || w === 'ALL'));
     body.replaceChildren(
@@ -375,10 +385,14 @@ export function renderSheets(root, ctx) {
       e.preventDefault();
       if (!name.value.trim()) return;
       btn.disabled = true;
-      const at = sheetInfo.lastRow + 2; // leave one blank row, like the sheet does
+      // Straight under the header for the first section, otherwise after one totally blank row
+      // (no Who drop-down or Done box — the sheet keeps that gap above every section)
+      const headerOnly = sheetInfo.hasHeader && sheetInfo.lastRow === 0;
+      const at = sheetInfo.lastRow + (headerOnly ? 1 : 2);
       const rowCount = active.gridProperties?.rowCount || 1000;
       const reqs = [];
       if (at + 1 > rowCount) reqs.push({ appendDimension: { sheetId: active.sheetId, dimension: 'ROWS', length: at + 1 - rowCount + 20 } });
+      if (!headerOnly) reqs.push(...gapReqs(active, at - 1, Math.max(sheetInfo.used, 2)));
       reqs.push(...headingReqs(active, at, Math.max(sheetInfo.used, 2), name.value.trim(), sheetInfo.font));
       try { await batch(reqs); m.close(); } catch (err) { toast(errMsg(err), 'error'); btn.disabled = false; }
       await refresh(true);

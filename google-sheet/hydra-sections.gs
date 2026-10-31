@@ -9,6 +9,8 @@
 //   • Cleared rows (text deleted) get their Who emptied and their drop-down and Done box back, unticked.
 //   • Every task row is 28px tall so the initials chips have room.
 //   • The Who column is only as wide as the most initials in any one row.
+//   • Each section heading has a totally blank row above it (no Who drop-down, no Done box), except the
+//     first one under the header. Clear or delete the heading and that blank row goes too.
 //   • ALL means everyone, so it never sits with individual initials: picking ALL clears the others,
 //     and picking someone while ALL is set replaces ALL.
 
@@ -74,6 +76,9 @@ function tidy_(sheet, cols) {
     const doneVal = cols.done ? String(row[cols.done - 1]).trim() : '';
 
     if (!name) {
+      // Totally blank (no drop-down/tick box): a section's gap row, or one whose section was removed —
+      // spacers_ keeps or removes those
+      if (!rules[i].some(Boolean) && !row.some(v => String(v).trim())) return;
       // Text cleared: make it a normal empty row again, and empty its Who
       if (who) { sheet.getRange(r, cols.who).clearContent(); row[cols.who - 1] = ''; }
       if (blank(i) && model >= 0 && model !== i && (!hasSetup(i) || doneVal === 'TRUE' || bold)) makeTask_(sheet, r, cols, model + 2, '');
@@ -92,8 +97,48 @@ function tidy_(sheet, cols) {
     }
   });
 
-  sheet.setRowHeights(2, n, ROW_PX);
+  spacers_(sheet, cols);
+  if (sheet.getLastRow() > 1) sheet.setRowHeights(2, sheet.getLastRow() - 1, ROW_PX);
   fitWho_(sheet, cols);
+}
+
+// A section heading: bold name in Task, no initials and no Who drop-down
+function headingAt_(values, weights, rules, cols, i) {
+  if (i < 0 || i >= values.length) return false;
+  const name = String(values[i][0]).trim();
+  const who = cols.who ? String(values[i][cols.who - 1]).trim() : '';
+  return !!name && weights[i][0] === 'bold' && !who && !(cols.who && rules[i][cols.who - 1]);
+}
+
+// Keep one totally blank row above every section heading (not the first one under the header), and
+// remove that blank row once its heading is gone. Works bottom-up so inserts/deletes don't shift unread rows.
+function spacers_(sheet, cols) {
+  const n = sheet.getLastRow() - 1;
+  if (n < 1) return;
+  const values = sheet.getRange(2, 1, n, cols.width).getDisplayValues();
+  const weights = sheet.getRange(2, 1, n, 1).getFontWeights();
+  const rules = sheet.getRange(2, 1, n, cols.width).getDataValidations();
+  const heading = i => headingAt_(values, weights, rules, cols, i);
+  const hasText = i => values[i].some((v, c) => c + 1 !== cols.done && String(v).trim());
+  const clean = i => !values[i].some(v => String(v).trim()) && !rules[i].some(Boolean);
+  for (let i = n - 1; i >= 0; i--) {
+    const r = i + 2;
+    if (heading(i)) {
+      if (i === 0) continue; // first row under the header needs no gap
+      if (hasText(i - 1)) { sheet.insertRowBefore(r); blankRow_(sheet, r, cols); }
+      else if (!clean(i - 1)) blankRow_(sheet, r - 1, cols);
+    } else if (clean(i) && !heading(i + 1)) {
+      sheet.deleteRow(r); // its section heading was removed
+    }
+  }
+}
+
+function blankRow_(sheet, r, cols) {
+  const row = sheet.getRange(r, 1, 1, cols.width);
+  row.clearDataValidations();
+  row.clearContent();
+  row.setBackground(null);
+  row.setFontWeight('normal');
 }
 
 function makeHeading_(sheet, r, cols) {
