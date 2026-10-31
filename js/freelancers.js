@@ -22,15 +22,24 @@ export const isFreelancersTab = tab => /^freelancers?$/i.test(tab.title.trim());
 export const parseTags = s => [...new Set((s || '').split(/[,;/]+/).map(t => t.trim()).filter(Boolean))];
 const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
-// Rows → [{ row, name, email, phone, tags }] sorted by name (row = index in the sheet, for editing)
+// Hydra's own people are the ones with a company email (@hydradesign.co.uk). They are listed with the freelancers so they can be
+// booked onto jobs too, and show in purple everywhere to tell them apart.
+const isEmployeeEmail = email => !!CONFIG.workspaceDomain && email.toLowerCase().endsWith('@' + CONFIG.workspaceDomain.toLowerCase());
+const hydraChip = () => h('span', { class: 'initials tag-purple' }, 'Hydra');
+export const personChips = f => [f.employee ? hydraChip() : null, ...f.tags.map(tagChip)];
+
+// Rows → [{ row, name, email, phone, tags, employee }]: Hydra team first (sheet order), then freelancers by name
+// (row = index in the sheet, for editing)
 export function parseFreelancers(rows) {
   const out = [];
   rows.forEach((r, i) => {
     const name = text(r[0]);
     if (!name || (i === 0 && /^name$/i.test(name))) return;
-    out.push({ row: i, name, email: text(r[1]), phone: text(r[2]), tags: parseTags(r[3]?.v) });
+    const email = text(r[1]);
+    out.push({ row: i, name, email, phone: text(r[2]), tags: parseTags(r[3]?.v), employee: isEmployeeEmail(email) });
   });
-  return out.sort(byName);
+  const team = out.filter(f => f.employee), rest = out.filter(f => !f.employee).sort(byName);
+  return [...team, ...rest];
 }
 
 export async function loadFreelancers(tabs) {
@@ -130,7 +139,7 @@ export function renderFreelancers(o) {
       h('span', { class: 'row-main' },
         h('b', {}, f.name),
         f.email || f.phone ? h('small', {}, [f.email, f.phone].filter(Boolean).join(' · ')) : null,
-        f.tags.length ? h('span', { class: 'tag-line' }, f.tags.map(tagChip)) : null),
+        f.employee || f.tags.length ? h('span', { class: 'tag-line' }, personChips(f)) : null),
       icon('chevron-right', 'chev'))))
       : h('p', { class: 'muted center-text' }, list.length ? 'Nobody matches.' : 'No freelancers yet. Tap + to add one.'));
   }

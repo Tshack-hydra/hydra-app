@@ -659,3 +659,9 @@ input[type=search] { width: 100%; min-height: 44px; padding: 11px 16px; border-r
 .initials.crew-chip { font-size: 0.7647rem; padding: 4px 10px; color: #fff; }
 .initials.crew-chip.booked { background: #0b8043; }
 .initials.crew-chip.pencil { background: #616161; }
+
+/* Hydra employees: purple everywhere (solid = booked, outline = pencilled) */
+.initials.crew-chip.emp.booked { background: #8e24aa; }
+.initials.crew-chip.emp.pencil { background: none; color: #ba68c8; box-shadow: inset 0 0 0 1.5px #8e24aa; }
+.tag.emp { background: #8e24aa; color: #fff; }
+.tag-purple.initials { }

@@ -14,7 +14,7 @@
 import { CONFIG } from '../config.js';
 import { gfetch } from './google.js';
 import { forgetCalendars, getCalendars, calName, isHolidays } from './calendar.js';
-import { isFreelancersTab, loadFreelancers, tagChip, specialismOptions, addFreelancersTab } from './freelancers.js';
+import { isFreelancersTab, loadFreelancers, personChips, specialismOptions, addFreelancersTab } from './freelancers.js';
 import { icon } from './icons.js';
 import { isGreen, guardedWrite } from './sheets.js';
 import { h, fill, store, field, toast, errMsg, ymd, parseYmd, addDays, dayLabel } from './util.js';
@@ -29,20 +29,19 @@ const GREEN = { red: 0.204, green: 0.659, blue: 0.325 };
 const WHITE = { red: 1, green: 1, blue: 1 };
 const GREY = { red: 0.718, green: 0.718, blue: 0.718 };
 // One colour per project in the calendar view (all readable with white text)
-// Each project gets its own Google event colour (by its order in the sheet). Green and grey are left out: they mean
-// Booked and Pencilled. id = Google colorId, hex = the same colour in the app.
+// Each project gets its own Google event colour (by its order in the sheet). Green and grey are left out (Booked and
+// Pencilled) and so is purple (Hydra's own team). id = Google colorId, hex = the same colour in the app.
 const PROJECT_COLOURS = [
   { id: '9', hex: '#3f51b5', fg: '#fff' },    // blueberry
   { id: '6', hex: '#f4511e', fg: '#fff' },    // tangerine
-  { id: '3', hex: '#8e24aa', fg: '#fff' },    // grape
   { id: '7', hex: '#039be5', fg: '#fff' },    // peacock
   { id: '11', hex: '#d50000', fg: '#fff' },   // tomato
   { id: '5', hex: '#f6bf26', fg: '#1f1f1d' }, // banana
   { id: '4', hex: '#e67c73', fg: '#fff' },    // flamingo
-  { id: '1', hex: '#7986cb', fg: '#fff' },    // lavender
 ];
 const BOOKED_COLOUR = { hex: '#0b8043', fg: '#fff' };    // basil, Google colour 10
 const PENCIL_COLOUR = { hex: '#616161', fg: '#fff' };    // graphite, Google colour 8
+const TEAM_COLOUR = { hex: '#8e24aa', fg: '#fff' };      // grape, Google colour 3 (pencilled: lavender, colour 1): Hydra employees
 
 const sid = () => CONFIG.spreadsheetId;
 const text = c => (c?.v || '').trim();
@@ -147,7 +146,7 @@ export function parseCrewing(rows, today = new Date()) {
 // Everything the calendar shows, one entry per day:
 //   kind 'project' = a day of a project (a date in its header), with its crew list
 //   kind 'ok' = a person Booked on a project day (green), kind 'pencil' = Pencilled (named, not confirmed)
-export function calendarItems(projects) {
+export function calendarItems(projects, isEmp = () => false) {
   const out = new Map();
   for (const [pi, p] of projects.entries()) for (const col of p.cols) for (const d of col.dates) {
     const date = ymd(d);
@@ -158,7 +157,7 @@ export function calendarItems(projects) {
       const cell = person.cells.get(col.col);
       if (!cell) continue;
       const k = [p.name, person.name, date].join('|').toLowerCase();
-      out.set(k, { key: k, kind: cell.ok ? 'ok' : 'pencil', project: p.name, person: person.name, date, note: noteIsName(cell.note, person.name) ? '' : cell.note, label: col.label });
+      out.set(k, { key: k, kind: cell.ok ? 'ok' : 'pencil', emp: isEmp(person.name), project: p.name, person: person.name, date, note: noteIsName(cell.note, person.name) ? '' : cell.note, label: col.label });
     }
   }
   return [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind) || a.person.localeCompare(b.person));
@@ -190,6 +189,7 @@ const eventId = key => 'hc' + hash(key).toString(32) + hash(key, 7).toString(32)
 
 // Google's event colours: project days take their project's colour, booked people green (basil), pencilled grey (graphite)
 const EVENT_COLOUR = { ok: '10', pencil: '8' };
+const TEAM_EVENT_COLOUR = { ok: '3', pencil: '1' }; // Hydra employees: purple (pencilled: lighter purple)
 const FOOTER = 'Kept up to date from the PROJECT CREWING tab of the Hydra spreadsheet. Change bookings there or in the app.';
 
 function eventFor(b) {
@@ -203,10 +203,10 @@ function eventFor(b) {
   return {
     summary,
     description: [...lines, '', FOOTER].join('\n'),
-    colorId: b.kind === 'project' ? b.colour : EVENT_COLOUR[b.kind],
+    colorId: b.kind === 'project' ? b.colour : (b.emp ? TEAM_EVENT_COLOUR : EVENT_COLOUR)[b.kind],
     start: { date: b.date },
     end: { date: ymd(addDays(parseYmd(b.date), 1)) },
-    extendedProperties: { private: { hydraCrew: '1', hydraKind: b.kind, hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '' } },
+    extendedProperties: { private: { hydraCrew: '1', hydraKind: b.kind, hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '', ...(b.emp ? { hydraEmp: '1' } : {}) } },
   };
 }
 
@@ -437,7 +437,8 @@ let selected = ymd();
 export function renderCrewing(o) {
   const { tab, rows, tools, body } = o;
   const data = parseCrewing(rows);
-  const all = calendarItems(data.projects);
+  const isEmp = name => !!fl.list.find(f => norm(f.name) === norm(name))?.employee;
+  const all = calendarItems(data.projects, isEmp);
   const stored = store.get(VIEW, 'days');
   const view = ['sheet', 'calendar'].includes(stored) ? stored : 'days';
   const setView = v => { store.set(VIEW, v); o.redraw(); };
@@ -468,10 +469,10 @@ export function renderCrewing(o) {
       .finally(() => { calState.checked = true; calState.loading = false; if (o.ctx.alive) o.redraw(); });
   }
 
-  const synced = syncCalendar(all); // before drawing, so the Calendar view waits for it
+  const synced = fl.loaded ? syncCalendar(all) : Promise.resolve(); // before drawing, so the Calendar view waits for it (and once the team is known, so colours are right first time)
   fill(body,
     calBar(o),
-    view === 'days' ? daysView(o, data) : view === 'sheet' ? sheetView(o, data) : calendarView(o, all, colours),
+    view === 'days' ? daysView(o, data, isEmp) : view === 'sheet' ? sheetView(o, data) : calendarView(o, all, colours),
     view !== 'calendar' ? h('button', { class: 'btn block', onclick: () => newProject(o, data) }, icon('plus'), 'New project') : null);
   synced.then(() => { if (calState.redo) { calState.redo = false; if (o.ctx.alive) o.redraw(); } });
 }
@@ -531,7 +532,7 @@ function calendarView(o, all, colours) {
   }
   const colourOf = p => (colours.get(p) || PROJECT_COLOURS[hash(p) % PROJECT_COLOURS.length]).hex;
   // chips match Google Calendar: project days in the project's colour, booked green, pencilled grey
-  const chipColour = b => b.kind === 'ok' ? BOOKED_COLOUR : b.kind === 'pencil' ? PENCIL_COLOUR : colours.get(b.project) || PROJECT_COLOURS[hash(b.project) % PROJECT_COLOURS.length];
+  const chipColour = b => b.kind === 'project' ? (colours.get(b.project) || PROJECT_COLOURS[hash(b.project) % PROJECT_COLOURS.length]) : b.emp ? TEAM_COLOUR : b.kind === 'ok' ? BOOKED_COLOUR : PENCIL_COLOUR;
   const wrap = h('div', {});
   let items = [];
   let state = calState.id ? 'loading' : 'sheet'; // loading | ready | sheet (not connected: show the sheet's own bookings) | error
@@ -556,7 +557,7 @@ function calendarView(o, all, colours) {
       if (t !== token) return;
       items = (d.items || []).filter(e => e.status !== 'cancelled' && e.start?.date).map(e => {
         const p = e.extendedProperties?.private || {};
-        return { kind: p.hydraKind || 'ok', project: p.hydraProject || e.summary || '', person: p.hydraPerson || '', date: e.start.date, note: p.hydraNote || '' };
+        return { kind: p.hydraKind || 'ok', emp: p.hydraEmp === '1', project: p.hydraProject || e.summary || '', person: p.hydraPerson || '', date: e.start.date, note: p.hydraNote || '' };
       }).sort((a, b) => a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind) || a.person.localeCompare(b.person));
       state = 'ready';
     } catch (e) {
@@ -592,6 +593,7 @@ function calendarView(o, all, colours) {
     fill(wrap,
       state === 'error' ? h('p', { class: 'error' }, 'Couldn’t read the Google calendar, showing the sheet instead: ' + err) : null,
       legend.length ? h('div', { class: 'chips' }, legend.map(n => h('span', { class: 'chip static', style: { '--c': colourOf(n) } }, h('i', { class: 'dot' }), n)),
+        h('span', { class: 'chip static', style: { '--c': TEAM_COLOUR.hex } }, h('i', { class: 'dot' }), 'Hydra team'),
         h('span', { class: 'chip static', style: { '--c': BOOKED_COLOUR.hex } }, h('i', { class: 'dot' }), 'Booked'),
         h('span', { class: 'chip static', style: { '--c': PENCIL_COLOUR.hex } }, h('i', { class: 'dot' }), 'Pencilled')) : null,
       h('div', { class: 'month-head' },
@@ -608,6 +610,7 @@ function calendarView(o, all, colours) {
             h('p', { class: 'section-title' }, h('i', { class: 'dot', style: { '--c': colourOf(p) } }), p),
             crew.length ? h('div', { class: 'group' }, crew.map(b => h('div', { class: 'row' },
               h('span', { class: 'row-main' }, h('b', {}, b.person), b.note && !noteIsName(b.note, b.person) ? h('small', {}, b.note) : null),
+              b.emp ? h('span', { class: 'tag emp' }, 'Hydra') : null,
               day.filter(x => x.kind !== 'project' && x.person === b.person).length > 1 ? h('span', { class: 'tag warn' }, 'Double-booked') : null,
               h('span', { class: 'tag' + (b.kind === 'ok' ? ' good' : '') }, b.kind === 'ok' ? 'Booked' : 'Pencilled'))))
               : h('p', { class: 'small empty' }, 'Nobody booked yet'));
@@ -764,7 +767,7 @@ function newProject(o, data) {
 }
 
 // ----- Days view: one section per project, one row per day, tap a day to pick who is booked -----
-function daysView(o, data) {
+function daysView(o, data, isEmp) {
   const cards = [];
   if (fl.loaded && !fl.tab) {
     cards.push(h('section', { class: 'card' },
@@ -779,8 +782,8 @@ function daysView(o, data) {
     cards.push(h('section', { class: 'card center' }, h('p', { class: 'muted' }, 'No projects yet. Import project days from your calendar (top right), or add a project below.')));
     return cards;
   }
-  // crew labels: green = Booked, grey = Pencilled (not tied to their skills)
-  const who = (name, ok) => h('span', { class: 'initials crew-chip ' + (ok ? 'booked' : 'pencil'), title: ok ? 'Booked' : 'Pencilled' }, name);
+  // crew labels: green = Booked, grey = Pencilled; purple for Hydra's own people (solid = booked, outline = pencilled)
+  const who = (name, ok) => h('span', { class: 'initials crew-chip ' + (isEmp(name) ? 'emp ' : '') + (ok ? 'booked' : 'pencil'), title: (isEmp(name) ? 'Hydra · ' : '') + (ok ? 'Booked' : 'Pencilled') }, name);
   for (const p of data.projects) {
     cards.push(h('section', { class: 'crew-project' },
       h('h3', {}, p.name, h('span', { class: 'count' }, `${p.cols.length} day${p.cols.length === 1 ? '' : 's'}`)),
@@ -831,7 +834,7 @@ async function pickCrew(o, p, c) {
       return h('button', {
         type: 'button', class: 'row' + (st === 'ok' ? ' confirmed' : ''), 'aria-label': `${f.name}: ${st === 'ok' ? 'confirmed' : st === 'pencil' ? 'pencilled' : 'not booked'}`,
         onclick: () => { const n = cycle[st]; if (n) state.set(k, n); else state.delete(k); form.dispatchEvent(new Event('input')); draw(); },
-      }, h('span', { class: 'row-main' }, h('b', {}, f.name), f.tags.length ? h('span', { class: 'tag-line' }, f.tags.map(tagChip)) : f.legacy ? h('small', {}, 'Not in the freelancer list') : null),
+      }, h('span', { class: 'row-main' }, h('b', {}, f.name), f.employee || f.tags.length ? h('span', { class: 'tag-line' }, personChips(f)) : f.legacy ? h('small', {}, 'Not in the freelancer list') : null),
       st ? h('span', { class: 'tag ' + (st === 'ok' ? 'good' : '') }, st === 'ok' ? 'Booked' : 'Pencilled') : null);
     })) : h('p', { class: 'muted center-text' }, fl.list.length ? 'Nobody matches.' : 'The freelancer list is empty.'));
   }

@@ -103,6 +103,10 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Import (calendar icon): `inferProjects` groups events by job number (H-12345 in title/description or `hydraJob`),
   else by identical title on ≥2 days; upcoming only; adds a block, or the missing days of a matching project.
 
+- Hydra employees = FREELANCERS rows whose email ends `@<workspaceDomain>`; listed first, `employee: true`, purple everywhere:
+  Hydra chip in lists, purple crew labels (solid booked / outline pencilled), Google events Grape (booked) / Lavender
+  (pencilled) with `hydraEmp=1`. Purple is not in `PROJECT_COLOURS`. Calendar sync waits until the freelancer list has loaded.
+
 ## Testing
 - Serve with `python3 -m http.server 8080` and open `http://localhost:8080` (Google only accepts `localhost`).
 - Without real keys, test by mocking `window.fetch` in the browser and calling `renderX(main, ctx)` directly.
