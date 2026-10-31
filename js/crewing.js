@@ -139,7 +139,7 @@ export function bookingsOf(projects) {
     if (!cell?.ok) continue; // only confirmed (green) bookings go to the calendar
     for (const d of col.dates) {
       const key = [p.name, person.name, ymd(d)].join('|').toLowerCase();
-      out.set(key, { key, project: p.name, person: person.name, date: ymd(d), note: cell.note, label: col.label });
+      out.set(key, { key, project: p.name, person: person.name, date: ymd(d), note: noteIsName(cell.note, person.name) ? '' : cell.note, label: col.label });
     }
   }
   return [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project) || a.person.localeCompare(b.person));
@@ -334,28 +334,11 @@ const DATE_COLS = 7;
 const BLOCK_ROWS = 1 + CREW_ROWS + 2; // header, crew rows, two blank rows before the next project
 const DATE_FORMAT = { type: 'DATE', pattern: 'ddd d mmm' };
 const DATE_FIELDS = FMT_FIELDS + ',userEnteredFormat.numberFormat';
-// Date drop-down: lists the dates on the hidden DATES tab (today − 14 days onwards; typing any other date is still allowed)
-const DATES_TAB = 'DATES';
-const DATES_ROWS = 220;
-const dateRule = { condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: `='${DATES_TAB}'!$A$1:$A$${DATES_ROWS}` }] }, strict: false, showCustomUi: true };
-let datesReady = false;
-const batchD = async reqs => { await ensureDates(); return batch(reqs); }; // for writes that use the date drop-down
-// Make the hidden DATES tab if nobody has yet (the sheet's script makes the same one)
-async function ensureDates() {
-  if (datesReady) return;
-  try {
-    const d = await batch([{ addSheet: { properties: { title: DATES_TAB, hidden: true, gridProperties: { rowCount: DATES_ROWS, columnCount: 1 } } } }]);
-    const sheetId = d.replies[0].addSheet.properties.sheetId;
-    await batch([{ updateCells: {
-      range: { sheetId, startRowIndex: 0, endRowIndex: DATES_ROWS, startColumnIndex: 0, endColumnIndex: 1 },
-      rows: Array.from({ length: DATES_ROWS }, (_, i) => ({ values: [{ userEnteredValue: { formulaValue: i ? `=A${i}+1` : '=TODAY()-14' }, userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'ddd d mmm yyyy' } } }] })),
-      fields: 'userEnteredValue,userEnteredFormat.numberFormat',
-    } }]);
-  } catch (e) {
-    if (!/already exists/i.test(errMsg(e))) throw e;
-  }
-  datesReady = true;
-}
+// Date cell: Sheets' own calendar picker (double-click or press Enter on the cell). Any date works, so it never runs out.
+const dateRule = { condition: { type: 'DATE_IS_VALID' }, inputMessage: 'Double-click for a calendar', strict: false, showCustomUi: true };
+// Booking cell drop-down: Pencilled (name, white) or Booked (name, green). Once chosen the cell holds the person's name,
+// so the name is in the list too and the cell never shows as invalid.
+const bookRule = name => ({ condition: { type: 'ONE_OF_LIST', values: [...(name ? [name] : []), 'Pencilled', 'Booked'].map(userEnteredValue => ({ userEnteredValue })) }, strict: false, showCustomUi: true });
 
 // Drop-down of freelancer names (null until the FREELANCERS tab exists). Names already in the sheet that aren't in the list stay valid.
 const crewRule = o => {
@@ -382,6 +365,7 @@ const spawnReqs = (o, at, name, days = []) => {
       fields: FMT_FIELDS,
     } },
     ...(rule ? [{ setDataValidation: { range: rng(o.tab, at + 1, 0, 1, at + 1 + CREW_ROWS), rule } }] : []),
+    { setDataValidation: { range: rng(o.tab, at + 1, 1, w, at + 1 + CREW_ROWS), rule: bookRule() } },
   ];
 };
 
@@ -395,7 +379,8 @@ function placeCrew(o, p, names, cell = () => []) {
   names.forEach((name, i) => {
     if (i < p.slots.length) { reqs.push(personReq(o.tab, p.slots[i], name, width), ...cell(p.slots[i])); return; }
     reqs.push({ insertDimension: { range: { sheetId: o.tab.sheetId, dimension: 'ROWS', startIndex: at, endIndex: at + 1 }, inheritFromBefore: true } },
-      personReq(o.tab, at, name, width), ...(rule ? [{ setDataValidation: { range: rng(o.tab, at, 0, 1, at + 1), rule } }] : []), ...cell(at));
+      personReq(o.tab, at, name, width), ...(rule ? [{ setDataValidation: { range: rng(o.tab, at, 0, 1, at + 1), rule } }] : []),
+      { setDataValidation: { range: rng(o.tab, at, 1, width, at + 1), rule: bookRule() } }, ...cell(at));
     at++;
   });
   return reqs;
@@ -498,7 +483,7 @@ function sheetView(o, data) {
             type: 'button', class: 'crew-cell' + (cell ? (cell.ok ? ' on' : ' pencil') : ''),
             'aria-label': `${person.name}, ${c.label}: ${cell ? (cell.ok ? 'confirmed' : 'pencilled') + (cell.note ? ', ' + cell.note : '') : 'not booked'}`,
             onclick: () => editBooking(o, p, person, c),
-          }, cell ? (cell.note || (cell.ok ? icon('check') : 'TBC')) : ''));
+          }, cell ? (cell.note && !noteIsName(cell.note, person.name) ? cell.note : cell.ok ? icon('check') : 'TBC') : ''));
         })))))) : h('p', { class: 'card muted' }, 'No dates yet. Add a date to start booking people.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn small', onclick: () => addPerson(o, p) }, icon('plus'), 'Person'),
@@ -608,28 +593,30 @@ async function write(o, row, col, expected, work) {
 
 function editBooking(o, p, person, c) {
   const cell = person.cells.get(c.col);
-  const note = h('input', { type: 'text', value: cell?.note || '', placeholder: 'e.g. 0830hrs, 1/2 day' });
-  const status = h('select', {}, [['none', 'Not booked'], ['pencil', 'Pencilled (not confirmed)'], ['ok', 'Confirmed']].map(([v, l]) =>
+  const status = h('select', {}, [['none', 'Not booked'], ['pencil', 'Pencilled'], ['ok', 'Booked']].map(([v, l]) =>
     h('option', { value: v, selected: v === (cell ? (cell.ok ? 'ok' : 'pencil') : 'none') }, l)));
   const btn = saveBtn('Save');
   const m = o.dialog(person.name, h('form', { class: 'form', onsubmit: e => {
     e.preventDefault();
     btn.disabled = true;
     m.close();
-    write(o, person.row, c.col, cellText(o.rows, person.row, c.col), () => batch([markReq(o.tab, person.row, c.col, status.value, note.value.trim())]));
+    write(o, person.row, c.col, cellText(o.rows, person.row, c.col), () => batch(markReq(o.tab, person.row, c.col, status.value, person.name)));
   } },
   h('p', { class: 'muted' }, `${p.name} · ${c.label}`),
   field('Status', status),
-  field('Note', note),
   btn));
 }
 
-// State of one cell: 'ok' = confirmed (green), 'pencil' = held (text, no green), 'none'
-const markReq = (tab, row, col, state, note = '') => ({ updateCells: {
-  range: rng(tab, row, col),
-  rows: [{ values: [{ userEnteredValue: val(state === 'none' ? '' : state === 'pencil' ? note || 'TBC' : note), userEnteredFormat: fmt(state === 'ok' ? GREEN : WHITE, false, 'CENTER') }] }],
-  fields: FMT_FIELDS,
-} });
+// State of one booking cell: 'ok' = Booked (name, green), 'pencil' = Pencilled (name, white), 'none' = empty.
+// Returns requests (the cell and its drop-down).
+const markReq = (tab, row, col, state, name) => [
+  { updateCells: {
+    range: rng(tab, row, col),
+    rows: [{ values: [{ userEnteredValue: val(state === 'none' ? '' : name), userEnteredFormat: fmt(state === 'ok' ? GREEN : WHITE, false, 'CENTER') }] }],
+    fields: FMT_FIELDS,
+  } },
+  { setDataValidation: { range: rng(tab, row, col, col + 1, row + 1), rule: bookRule(state === 'none' ? '' : name) } },
+];
 
 function addPerson(o, p) {
   const name = h('input', { type: 'text', required: true, placeholder: 'e.g. Jamie Baker', list: 'crew-names', autocomplete: 'off' });
@@ -689,7 +676,7 @@ function addDay(o, p) {
     const cell = custom ? { userEnteredValue: val(custom), userEnteredFormat: fmt(GREY, true, 'CENTER') } : dateCell(parseYmd(date.value));
     const col = Math.max(0, ...p.cols.map(c => c.col)) + 1;
     const cols = o.tab.gridProperties?.columnCount || 26;
-    write(o, p.row, col, cellText(o.rows, p.row, col), () => batchD([
+    write(o, p.row, col, cellText(o.rows, p.row, col), () => batch([
       ...(col + 1 > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: col + 1 - cols + 2 } }] : []),
       { updateCells: { range: rng(o.tab, p.row, col), rows: [{ values: [cell] }], fields: DATE_FIELDS } },
       ...(custom ? [] : [{ setDataValidation: { range: rng(o.tab, p.row, col), rule: dateRule } }]),
@@ -727,7 +714,7 @@ function newProject(o, data) {
     btn.disabled = true;
     m.close();
     const at = data.lastRow < 0 ? 0 : data.lastRow + 3; // two blank rows between projects, like the sheet
-    const work = () => batchD([
+    const work = () => batch([
       ...growRows(o.tab, at + BLOCK_ROWS),
       ...((o.tab.gridProperties?.columnCount || 26) < 1 + DATE_COLS ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: 1 + DATE_COLS - o.tab.gridProperties.columnCount } }] : []),
       ...spawnReqs(o, at, name.value.trim(), date.value ? [parseYmd(date.value)] : []),
@@ -817,14 +804,14 @@ async function pickCrew(o, p, c) {
     const reqs = [];
     for (const x of p.people) {
       const k = norm(x.name), now = state.get(k) || 'none', before = was.get(k) || 'none';
-      if (now !== before) reqs.push(markReq(o.tab, x.row, c.col, now, x.cells.get(c.col)?.note || ''));
+      if (now !== before) reqs.push(...markReq(o.tab, x.row, c.col, now, x.name));
     }
     const add = [...state].filter(([k]) => !p.people.some(x => norm(x.name) === k));
     if (!reqs.length && !add.length) { m.close(); return; }
     btn.disabled = true;
     m.close();
     const byRow = [];
-    reqs.push(...placeCrew(o, p, add.map(([k]) => names.get(k).name), row => { const i = byRow.length; byRow.push(row); return [markReq(o.tab, row, c.col, add[i][1])]; }));
+    reqs.push(...placeCrew(o, p, add.map(([k]) => names.get(k).name), row => { const i = byRow.length; byRow.push(row); return markReq(o.tab, row, c.col, add[i][1], names.get(add[i][0]).name); }));
     write(o, p.lastRow, 0, cellText(o.rows, p.lastRow, 0), () => batch(reqs));
   });
   draw();
@@ -935,7 +922,7 @@ async function importFromCalendar(o, data) {
         }
       }
       const cols = o.tab.gridProperties?.columnCount || 26;
-      const work = () => batchD([
+      const work = () => batch([
         ...growRows(o.tab, at + 1),
         ...(needCols > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: needCols - cols + 2 } }] : []),
         ...reqs,

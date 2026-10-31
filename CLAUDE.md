@@ -76,8 +76,11 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 
 ## Project Crewing (tab of the Hydra sheet, `js/crewing.js`)
 - Tab named `PROJECT CREWING` (matched case-insensitively). A project block = grey bold header row (project name in A, a
-  date drop-down/picker per column B…) + crew rows (A = drop-down listing the FREELANCERS tab) + two blank rows.
-  **Green fill = confirmed; text without green = pencilled; empty = not booked.** Only confirmed bookings reach the calendar.
+  date cell per column B… with Sheets' calendar picker: double-click) + crew rows (A = drop-down listing the FREELANCERS
+  tab; every booking box has a drop-down **Pencilled / Booked**) + two blank rows.
+  Picking either puts the person's name (col A) in the box; **Booked = green, Pencilled = white, empty = not booked.**
+  The Apps Script does the name + colour (and re-validates the box with `[name, Pencilled, Booked]` so it never looks invalid).
+  The app writes the same (`markReq`). Only Booked reaches the calendar.
 - `google-sheet/hydra-crewing.gs` (second file of the sheet's Apps Script; `onEdit` in hydra-sections.gs calls `crewingEdit_`):
   typing a name in A on an empty row spawns the block. `spawnReqs()` in crewing.js writes the identical layout from the app
   (New project / Import) — keep the two in step. Spare crew rows (A has a drop-down, no name) are "slots" the app fills first.
