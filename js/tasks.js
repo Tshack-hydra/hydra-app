@@ -62,9 +62,9 @@ export function renderTasks(root, ctx) {
   function render() {
     if (!lists) return;
     const mine = who() === 'mine';
-    fill(tools, h('div', { class: 'seg' },
-      h('button', { class: mine ? 'on' : '', onclick: () => { store.set('hydra.tasks.who', 'mine'); render(); } }, me() ? `Mine (${me()})` : 'Mine'),
-      h('button', { class: mine ? '' : 'on', onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'Everyone')),
+    fill(tools, h('div', { class: 'seg', role: 'group', 'aria-label': 'Whose tasks' },
+      h('button', { class: mine ? 'on' : '', 'aria-pressed': String(mine), onclick: () => { store.set('hydra.tasks.who', 'mine'); render(); } }, 'Mine'),
+      h('button', { class: mine ? '' : 'on', 'aria-pressed': String(!mine), onclick: () => { store.set('hydra.tasks.who', 'all'); render(); } }, 'All')),
       h('button', { class: 'chip end' + (hideDone() ? '' : ' off'), 'aria-pressed': String(hideDone()), onclick: () => { store.set('hydra.tasks.hideDone', !hideDone()); render(); } }, hideDone() ? 'Show Done' : 'Hide Done'));
 
     if (mine && !me()) {
@@ -102,7 +102,7 @@ export function renderTasks(root, ctx) {
 
   function taskRow(l, t) {
     return h('div', { class: 'task' + (t.done ? ' done' : '') },
-      h('button', { class: 'tick', 'aria-label': t.done ? 'Mark not done' : 'Mark done', onclick: e => toggleDone(e.currentTarget, l, t) }, t.done ? '✓' : ''),
+      h('button', { class: 'tick', 'aria-label': t.done ? 'Mark not done' : 'Mark done', onclick: () => toggleDone(l, t) }, t.done ? '✓' : ''),
       h('button', { class: 'task-text', onclick: () => openInSheets(l.tab) },
         h('span', {}, t.text || h('i', { class: 'muted' }, '(blank)')),
         t.extra.length ? h('small', { class: 'muted' }, t.extra.join(' · ')) : null),
@@ -110,12 +110,12 @@ export function renderTasks(root, ctx) {
   }
 
   // Ticked tasks stay in the list (tinted green) unless Hide Done is on; tap again to untick
-  async function toggleDone(btn, l, t) {
+  // Shows at once (counts included), then saves — re-checking the row first — and refreshes quietly
+  async function toggleDone(l, t) {
     const done = !t.done;
-    btn.disabled = true;
-    btn.closest('.task').classList.toggle('done', done);
-    btn.textContent = done ? '✓' : '';
-    if (await guardedWrite(l.tab, t.row, 0, t.text, () => setDone(l.tab, t, l.used, done))) toast(done ? 'Done' : 'Not done');
+    t.done = done;
+    render();
+    await guardedWrite(l.tab, t.row, 0, t.text, () => setDone(l.tab, t, l.used, done));
     await refresh(true);
   }
 

@@ -12,7 +12,7 @@
 
 import { CONFIG } from '../config.js';
 import { gfetch, tokenValid, myInitials } from './google.js';
-import { icon } from './icons.js';
+import { icon, sheetsLogo } from './icons.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
@@ -185,6 +185,14 @@ const headingReqs = (tab, row, used, name, font) => [
   } },
 ];
 
+// Update the rows we already have so a tick shows at once, before the sheet is re-read
+export function showDoneLocally(rows, t, done) {
+  const r = rows[t.row] || (rows[t.row] = []);
+  const cell = c => (r[c] = { ...(r[c] || { v: '' }) });
+  if (t.doneCol >= 0) cell(t.doneCol).v = done ? 'TRUE' : 'FALSE';
+  if (t.doneCol < 0 || !done) [0, 1].forEach(c => { cell(c).bg = done ? GREEN : null; });
+}
+
 // Insert a task as a new row under the last task of section s (guarded on that anchor row)
 export function insertTask(tab, s, used, text, who) {
   const last = s.tasks[s.tasks.length - 1];
@@ -262,17 +270,25 @@ export function renderSheets(root, ctx) {
       class: 'sheet-tab' + (t === active ? ' active' : ''), role: 'tab',
       onclick: () => { if (t === active) return; active = t; rows = null; lastSig = ''; store.set('hydra.sheets.active', t.sheetId); renderTabs(); body.replaceChildren(spinner()); tools.replaceChildren(); refresh(true); },
     }, t.title)));
-    tabsEl.querySelector('.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    // keep the active tab in view by scrolling the strip sideways only (scrollIntoView would also jump the page)
+    const a = tabsEl.querySelector('.active');
+    if (a) {
+      const box = tabsEl.getBoundingClientRect(), r = a.getBoundingClientRect();
+      if (r.left < box.left) tabsEl.scrollLeft += r.left - box.left - 16;
+      else if (r.right > box.right) tabsEl.scrollLeft += r.right - box.right + 16;
+    }
   }
 
   function render() {
     if (!rows || !active) return;
     const p = prefs();
     fill(tools,
-      initials() ? h('button', { class: 'chip' + (p.mine ? '' : ' off'), onclick: () => setPref('mine', !p.mine) }, `Mine (${initials()})`) : null,
+      initials() ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Whose tasks' },
+        h('button', { class: p.mine ? 'on' : '', 'aria-pressed': String(p.mine), onclick: () => setPref('mine', true) }, 'Mine'),
+        h('button', { class: p.mine ? '' : 'on', 'aria-pressed': String(!p.mine), onclick: () => setPref('mine', false) }, 'All')) : null,
       h('button', { class: 'chip end' + (p.hideDone ? '' : ' off'), 'aria-pressed': String(p.hideDone), onclick: () => setPref('hideDone', !p.hideDone) }, p.hideDone ? 'Show Done' : 'Hide Done'));
     ctx.actions(
-      h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, icon('external')));
+      h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, sheetsLogo()));
     renderList(p);
   }
 
@@ -308,8 +324,12 @@ export function renderSheets(root, ctx) {
     await refresh(true);
   }
 
+  // Show the tick straight away, then save it (re-checking the row first) and refresh quietly
   function toggleDone(t, used) {
-    return guarded(t.row, 0, t.text, () => setDone(active, t, used, !t.done));
+    const done = !t.done;
+    showDoneLocally(rows, t, done);
+    render();
+    return guarded(t.row, 0, t.text, () => setDone(active, t, used, done));
   }
 
   function taskForm({ text = '', who = '', submit, extraButtons = [] }) {

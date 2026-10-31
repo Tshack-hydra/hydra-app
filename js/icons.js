@@ -24,3 +24,14 @@ export function icon(name, cls = '') {
   span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[name] || ''}</svg>`;
   return span;
 }
+
+// Small Google Sheets mark (green sheet, folded corner, white grid) for buttons that open Google Sheets
+export function sheetsLogo(cls = '') {
+  const span = document.createElement('span');
+  span.className = 'icon ' + cls;
+  span.setAttribute('aria-hidden', 'true');
+  span.innerHTML = '<svg viewBox="0 0 24 24"><path fill="#0F9D58" d="M6.5 2h8L20 7.5V20a2 2 0 0 1-2 2H6.5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/>'
+    + '<path fill="#87CEAC" d="M14.5 2v5.5H20z"/>'
+    + '<path fill="none" stroke="#fff" stroke-width="1.4" d="M8 11h8.5v7H8zM8 13.4h8.5M8 15.7h8.5M11.5 11v7"/></svg>';
+  return span;
+}

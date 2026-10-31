@@ -200,10 +200,10 @@ body.gated { padding-top: env(safe-area-inset-top); }
 .tag.tint { background: var(--tint); color: var(--on-tint); }
 
 /* segmented control */
-.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--fill); border-radius: 9px; padding: 2px; }
-.seg button { border: 0; background: none; min-height: 30px; padding: 0 16px; border-radius: 7px; font-size: 0.7647rem; font-weight: 600; }
-.seg button.on { background: var(--bg2); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); }
-@media (prefers-color-scheme: dark) { .seg button.on { background: #636366; } }
+/* one capsule split in two halves; the chosen half is filled with the tint, the other stays quiet */
+.seg { display: inline-grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--fill); border-radius: 999px; overflow: hidden; }
+.seg button { border: 0; background: none; min-height: 34px; padding: 0 18px; font-size: 0.882rem; font-weight: 600; color: var(--label2); transition: background 0.15s, color 0.15s; }
+.seg button.on { background: var(--tint); color: var(--on-tint); }
 
 /* ---- inset grouped lists ---- */
 .group, .card { background: var(--bg2); border-radius: var(--radius); margin: 0 0 20px; overflow: hidden; }
