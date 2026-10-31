@@ -766,7 +766,7 @@ function openFreelancers(o) {
   else toast('Create the Freelancers tab first (see the card in Days view)', 'error');
 }
 
-// Who is booked on this day. Tap a freelancer to cycle: not booked → confirmed (green) → pencilled → not booked.
+// Who is booked on this day. Tap a freelancer to cycle: not booked → pencilled → booked (green) → not booked.
 // People already in the sheet but not in the freelancer list are shown too.
 async function pickCrew(o, p, c) {
   try { const r = await loadFreelancers(o.tabs); fl.tab = r.tab; fl.list = r.list; } catch { /* use what we have */ }
@@ -782,9 +782,9 @@ async function pickCrew(o, p, c) {
   const listEl = h('div', {});
   const form = h('form', { class: 'form' }, search, tagsEl, listEl);
   const btn = saveBtn('Save');
-  form.append(h('p', { class: 'hint' }, 'Tap once to confirm (green in the sheet), again to pencil in, again to remove.'), btn,
+  form.append(h('p', { class: 'hint' }, 'Tap once to pencil someone in, again to book them (green in the sheet), again to remove.'), btn,
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onclick: () => { m.close(); editDate(o, p, c); } }, 'Edit or remove this day')));
-  const cycle = { undefined: 'ok', ok: 'pencil', pencil: undefined };
+  const cycle = { undefined: 'pencil', pencil: 'ok', ok: undefined };
   function draw() {
     const all = [...names.values()];
     fill(tagsEl, specialismOptions(fl.list).map(t => h('button', { type: 'button', class: 'chip' + (tag === t ? '' : ' off'), 'aria-pressed': String(tag === t), onclick: () => { tag = tag === t ? '' : t; draw(); } }, t)));
@@ -795,7 +795,7 @@ async function pickCrew(o, p, c) {
         type: 'button', class: 'row' + (st === 'ok' ? ' confirmed' : ''), 'aria-label': `${f.name}: ${st === 'ok' ? 'confirmed' : st === 'pencil' ? 'pencilled' : 'not booked'}`,
         onclick: () => { const n = cycle[st]; if (n) state.set(k, n); else state.delete(k); form.dispatchEvent(new Event('input')); draw(); },
       }, h('span', { class: 'row-main' }, h('b', {}, f.name), f.tags.length ? h('span', { class: 'tag-line' }, f.tags.map(tagChip)) : f.legacy ? h('small', {}, 'Not in the freelancer list') : null),
-      st ? h('span', { class: 'tag ' + (st === 'ok' ? 'good' : '') }, st === 'ok' ? 'Confirmed' : 'Pencilled') : null);
+      st ? h('span', { class: 'tag ' + (st === 'ok' ? 'good' : '') }, st === 'ok' ? 'Booked' : 'Pencilled') : null);
     })) : h('p', { class: 'muted center-text' }, fl.list.length ? 'Nobody matches.' : 'The freelancer list is empty.'));
   }
   const m = o.dialog(`${p.name} · ${c.label}`, form);
