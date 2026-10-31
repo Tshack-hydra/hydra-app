@@ -6,6 +6,8 @@ const P = {
   'chevron-left': '<path d="M15 5l-7 7 7 7"/>',
   'chevron-up': '<path d="M5 15l7-7 7 7"/>',
   'chevron-right': '<path d="M9 5l7 7-7 7"/>',
+  'chevron-down': '<path d="M5 9l7 7 7-7"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   refresh: '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
   external: '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',
   camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',

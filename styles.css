@@ -294,6 +294,22 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .toolbar .spacer { flex: 1; }
 .toolbar .end { margin-left: auto; }
 
+/* Who picker in task forms: a field showing the chosen initials, opening a list like the sheet's drop-down */
+.who-field {
+  width: 100%; min-height: 44px; padding: 8px 12px 8px 16px; border: 0; border-radius: var(--radius); background: var(--bg2);
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left;
+}
+.who-shown { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.who-shown .initials, .who-option .initials { font-size: 0.882rem; padding: 4px 10px; }
+.who-field .chev { width: 18px; height: 18px; color: var(--label3); transition: transform 0.2s; }
+.who-field[aria-expanded="true"] .chev { transform: rotate(180deg); }
+.who-list { background: var(--bg2); border-radius: var(--radius); overflow: hidden; }
+.who-option { width: 100%; min-height: 44px; border: 0; background: none; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
+.who-option + .who-option { border-top: 0.5px solid var(--sep); }
+.who-option:active { background: var(--fill); }
+.who-option .tick-mark { width: 20px; height: 20px; color: var(--tint); }
+@media (prefers-color-scheme: dark) { .sheet:not(.full) :is(.who-field, .who-list) { background-color: var(--fill2); } }
+
 /* pull to refresh: the activity indicator drops in under the navigation bar */
 .ptr {
   position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 44px); z-index: 30; pointer-events: none;

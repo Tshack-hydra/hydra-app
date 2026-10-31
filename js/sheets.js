@@ -90,6 +90,38 @@ export const whoList = who => {
 // Same format as the sheet's multi-select Who dropdown ("TS, MR"), so typed initials become chips there
 export const formatWho = who => whoList(who).join(', ');
 
+// Everyone who can be picked: the team in CONFIG.teamColours (ALL first), plus any initials already in use
+export const whoOptions = (seen = []) => {
+  const team = Object.keys(CONFIG.teamColours || {});
+  return [...new Set(['ALL', ...team, ...seen.flatMap(whoList)])];
+};
+
+// "Who" picker for task forms, like the sheet's drop-down: tap to open a list of coloured initials,
+// pick one or more; ALL can't be combined with individual initials. Returns { el, value() }.
+export function whoPicker(initial, options) {
+  let picked = whoList(initial || '');
+  const shown = h('span', { class: 'who-shown' });
+  const list = h('div', { class: 'who-list', role: 'group', 'aria-label': 'Who', hidden: true });
+  const open = h('button', { type: 'button', class: 'who-field', 'aria-expanded': 'false', onclick: () => {
+    list.hidden = !list.hidden;
+    open.setAttribute('aria-expanded', String(!list.hidden));
+  } }, shown, icon('chevron-down', 'chev'));
+  const el = h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Who'), open, list);
+  const pick = w => {
+    if (picked.includes(w)) picked = picked.filter(x => x !== w);
+    else picked = w === 'ALL' ? ['ALL'] : [...picked.filter(x => x !== 'ALL'), w];
+    draw();
+    el.dispatchEvent(new Event('input', { bubbles: true })); // counts as an unsaved change
+  };
+  const draw = () => {
+    fill(shown, picked.length ? picked.map(initialsTag) : h('span', { class: 'muted' }, 'Nobody'));
+    fill(list, options.map(w => h('button', { type: 'button', class: 'who-option', role: 'checkbox', 'aria-checked': String(picked.includes(w)), onclick: () => pick(w) },
+      initialsTag(w), picked.includes(w) ? icon('check', 'tick-mark') : null)));
+  };
+  draw();
+  return { el, value: () => picked.join(', ') };
+}
+
 // ---- API ----
 export async function fetchTabs() {
   const fields = 'sheets.properties(sheetId,title,index,hidden,gridProperties(rowCount,columnCount))';
@@ -344,14 +376,14 @@ export function renderSheets(root, ctx) {
 
   function taskForm({ text = '', who = '', submit, extraButtons = [] }) {
     const ta = h('textarea', { rows: 3, required: true }, text);
-    const wi = h('input', { type: 'text', value: who, placeholder: 'e.g. TS, or TS MR, or ALL', autocapitalize: 'characters' });
+    const wi = whoPicker(who, whoOptions(parseList(rows).sections.flatMap(s => s.tasks.map(t => t.who))));
     const btn = h('button', { class: 'btn primary block', type: 'submit' }, 'Save');
     const form = h('form', { class: 'form', onsubmit: async e => {
       e.preventDefault();
       if (!ta.value.trim()) return;
       btn.disabled = true;
-      await submit(ta.value.trim(), formatWho(wi.value));
-    } }, field('Task', ta), field('Who', wi), btn, h('div', { class: 'actions' }, extraButtons));
+      await submit(ta.value.trim(), wi.value());
+    } }, field('Task', ta), wi.el, btn, h('div', { class: 'actions' }, extraButtons));
     setTimeout(() => ta.focus(), 50);
     return form;
   }
