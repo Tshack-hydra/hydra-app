@@ -18,6 +18,7 @@ const SECTION_CHOICE = 'new section';
 const ROW_PX = 28; // roomy rows so the initials chips aren't cramped
 
 function onEdit(e) {
+  if (crewingEdit_(e)) return; // PROJECT CREWING tab: see hydra-crewing.gs
   const sheet = e.range.getSheet();
   const cols = columns_(sheet);
   if (!cols) return;

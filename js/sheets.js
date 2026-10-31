@@ -137,7 +137,7 @@ async function fetchGrid(tab) {
   return toRows(d.sheets?.[0]?.data?.[0]?.rowData);
 }
 
-const GRID_FIELDS = 'data(rowData(values(formattedValue,hyperlink,effectiveFormat(backgroundColor,textFormat(bold,fontFamily)))))';
+const GRID_FIELDS = 'data(rowData(values(formattedValue,hyperlink,effectiveValue(numberValue),dataValidation(condition(type)),effectiveFormat(backgroundColor,textFormat(bold,fontFamily),numberFormat(type)))))';
 function toRows(rowData) {
   const rows = (rowData || []).map(r => (r.values || []).map(c => ({
     v: c.formattedValue ?? '',
@@ -145,6 +145,8 @@ function toRows(rowData) {
     bg: c.effectiveFormat?.backgroundColor || null,
     bold: !!c.effectiveFormat?.textFormat?.bold,
     font: c.effectiveFormat?.textFormat?.fontFamily || null,
+    num: c.effectiveFormat?.numberFormat?.type?.startsWith('DATE') ? c.effectiveValue?.numberValue ?? null : null, // a real date (days since 30 Dec 1899)
+    dv: !!c.dataValidation, // has a drop-down / rule
   })));
   while (rows.length && !rows[rows.length - 1].some(c => c.v)) rows.pop();
   return rows;

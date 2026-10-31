@@ -75,22 +75,26 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Nothing about tabs is hard-coded; new tabs/columns must keep working.
 
 ## Project Crewing (tab of the Hydra sheet, `js/crewing.js`)
-- Tab named `PROJECT CREWING` (matched case-insensitively): grey/bold row = project (name in A, a date label per column), rows below = crew (name in A,
-  filled or green cell under a date = booked, text = note). Blocks are separated by blank rows. `sheets.js` shows it with
-  `renderCrewing` instead of the task list; `tasks.js` skips it. A "+ Project Crewing" tab button creates an empty one.
-- Date labels are free text ("14th Oct PREP", "8th & 11th Jan' 2027"); `parseDates` resolves a missing year to the first
-  date on/after the previous column (first one: today − 120 days). Labels with no day+month show in the grid only.
-- Sheet | Calendar toggle (`hydra.crew.view`). Calendar view is drawn from the sheet itself.
-- Google Calendar mirror "Project Crewing": created from the app, shared with the domain (writer), id stored in the
-  spreadsheet's developer metadata (`hydraCrewingCalendar`). One all-day event per person/project/day with a
+- Tab named `PROJECT CREWING` (matched case-insensitively). A project block = grey bold header row (project name in A, a
+  date drop-down/picker per column B…) + crew rows (A = drop-down listing the FREELANCERS tab) + two blank rows.
+  **Green fill = confirmed; text without green = pencilled; empty = not booked.** Only confirmed bookings reach the calendar.
+- `google-sheet/hydra-crewing.gs` (second file of the sheet's Apps Script; `onEdit` in hydra-sections.gs calls `crewingEdit_`):
+  typing a name in A on an empty row spawns the block. `spawnReqs()` in crewing.js writes the identical layout from the app
+  (New project / Import) — keep the two in step. Spare crew rows (A has a drop-down, no name) are "slots" the app fills first.
+- Date headers are real dates (`num` = days since 30 Dec 1899, read via effectiveValue) or legacy free text ("14th Oct PREP",
+  "8th & 11th Jan' 2027"); `parseDates` resolves a missing year to the first date on/after the previous column.
+- Views: Days (default) | Sheet (grid) | Calendar (`hydra.crew.view`). Calendar view is read from the Google calendar.
+- Google Calendar mirror "Project Crewing": auto-created from the app, shared with the domain (writer), id stored in the
+  spreadsheet's developer metadata (`hydraCrewingCalendar`). One all-day event per confirmed person/project/day with a
   deterministic id (so concurrent syncs don't duplicate) and `hydraCrew=1`; synced whenever the view opens and the bookings changed.
+- `tasks.js` and the list view skip this tab. A "+ PROJECT CREWING" tab button creates an empty one.
 
 ## Freelancers & crew days
 - `Freelancers` tab (`js/freelancers.js`): Name | Email | Phone | Specialisms (comma-separated tags; options in
   `CONFIG.specialisms` plus any already used). Shown by the Sheets section as a manager (add / edit / delete). Created from
   the app with Test Dummy 1–10 seed rows. Skipped by Tasks.
-- Crewing "Days" view (default): per project, a row per day column; tapping a day picks freelancers (adds a person row
-  to the block if needed and paints the cell green). "Sheet" is the raw grid, "Calendar" the month view.
+- Crewing "Days" view (default): per project, a row per day column; tapping a day picks freelancers (tap cycles confirmed → pencilled → off; uses a spare crew row
+  or inserts one). "Sheet" is the raw grid, "Calendar" the month view.
 - Import (calendar icon): `inferProjects` groups events by job number (H-12345 in title/description or `hydraJob`),
   else by identical title on ≥2 days; upcoming only; adds a block, or the missing days of a matching project.
 

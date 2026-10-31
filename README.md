@@ -155,3 +155,9 @@ sw.js, manifest.webmanifest, icons/   make it installable and open offline
 - Google sign-in lasts an hour. The app renews it quietly when you change section, so you may see a quick flash.
 - Photos are resized to about 2,400 px JPEG before uploading, so they upload fast on mobile data.
 - Receipt history in the app only covers receipts sent from that phone. Dext and Dropbox hold the real records.
+
+## Project Crewing sheet script
+In the spreadsheet: Extensions → Apps Script. Replace the existing file's contents with `google-sheet/hydra-sections.gs`, add a
+new file (+ → Script) named `hydra-crewing` and paste `google-sheet/hydra-crewing.gs` into it. Then on the PROJECT CREWING tab,
+type a project name in column A of an empty row: it becomes a project with date pickers across and a freelancer drop-down per crew row.
+Colour a crew cell green to confirm someone for that date.
