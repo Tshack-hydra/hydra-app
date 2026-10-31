@@ -103,7 +103,8 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Import (calendar icon): `inferProjects` groups events by job number (H-12345 in title/description or `hydraJob`),
   else by identical title on ≥2 days; upcoming only; adds a block, or the missing days of a matching project.
 
-- Hydra employees = FREELANCERS rows whose email ends `@<workspaceDomain>`; listed first, `employee: true`, purple everywhere:
+- Hydra employees = FREELANCERS rows whose email ends `@<workspaceDomain>`; listed first, `employee: true`, purple everywhere, one
+  bubble `Hydra - <job title>` (`hydraLabel`), only ever **Booked** (no Pencilled option: `bookRule(name, emp)`, and `isEmployee_` in the Apps Script):
   Hydra chip in lists, purple crew labels (solid booked / outline pencilled), Google events Grape (booked) / Lavender
   (pencilled) with `hydraEmp=1`. Purple is not in `PROJECT_COLOURS`. Calendar sync waits until the freelancer list has loaded.
 

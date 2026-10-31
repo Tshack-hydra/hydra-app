@@ -14,7 +14,7 @@
 import { CONFIG } from '../config.js';
 import { gfetch } from './google.js';
 import { forgetCalendars, getCalendars, calName, isHolidays } from './calendar.js';
-import { isFreelancersTab, loadFreelancers, personChips, specialismOptions, addFreelancersTab } from './freelancers.js';
+import { isFreelancersTab, loadFreelancers, personChips, hydraLabel, specialismOptions, addFreelancersTab } from './freelancers.js';
 import { icon } from './icons.js';
 import { isGreen, guardedWrite } from './sheets.js';
 import { h, fill, store, field, toast, errMsg, ymd, parseYmd, addDays, dayLabel } from './util.js';
@@ -163,6 +163,8 @@ export function calendarItems(projects, isEmp = () => false) {
   return [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind) || a.person.localeCompare(b.person));
 }
 
+// Hydra employees (company email in the FREELANCERS tab): they are only ever Booked, never pencilled
+const isEmpName = name => !!fl.list.find(f => norm(f.name) === norm(name))?.employee;
 const firstName = n => n.split(/\s+/)[0];
 // "Jamie B" / "Jamie S": first name plus last initial, so two Jamies can be told apart
 const shortName = n => { const p = n.split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1][0]}` : p[0]; };
@@ -266,9 +268,20 @@ async function createCalendar() {
   return { id: cal.id, shared };
 }
 
-async function pool(jobs, n = 5) {
+// Google throttles bursts of calendar writes ("Rate Limit Exceeded"): wait a little longer each time and try again
+async function withRetry(fn, tries = 6) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); }
+    catch (e) {
+      if (i >= tries || !/rate limit|quota|too many|backend error/i.test(errMsg(e))) throw e;
+      await new Promise(r => setTimeout(r, 600 * 2 ** i + Math.random() * 400));
+    }
+  }
+}
+
+async function pool(jobs, n = 3) {
   const queue = [...jobs];
-  await Promise.all(Array.from({ length: n }, async () => { while (queue.length) await queue.shift()(); }));
+  await Promise.all(Array.from({ length: n }, async () => { while (queue.length) await withRetry(queue.shift()); }));
 }
 
 // Make the calendar match the sheet: add what's missing, fix what changed, remove what's gone
@@ -366,9 +379,9 @@ const DATE_FORMAT = { type: 'DATE', pattern: 'ddd d mmm' };
 const DATE_FIELDS = FMT_FIELDS + ',userEnteredFormat.numberFormat';
 // Date cell: Sheets' own calendar picker (double-click or press Enter on the cell). Any date works, so it never runs out.
 const dateRule = { condition: { type: 'DATE_IS_VALID' }, inputMessage: 'Double-click for a calendar', strict: false, showCustomUi: true };
-// Booking cell drop-down: Pencilled (name, white) or Booked (name, green). Once chosen the cell holds the person's name,
+// Booking cell drop-down: Pencilled (name, white) or Booked (name, green); Hydra employees only get Booked. Once chosen the cell holds the person's name,
 // so the name is in the list too and the cell never shows as invalid.
-const bookRule = name => ({ condition: { type: 'ONE_OF_LIST', values: [...(name ? [name] : []), 'Pencilled', 'Booked'].map(userEnteredValue => ({ userEnteredValue })) }, strict: false, showCustomUi: true });
+const bookRule = (name, emp = false) => ({ condition: { type: 'ONE_OF_LIST', values: [...(name ? [name] : []), ...(emp ? [] : ['Pencilled']), 'Booked'].map(userEnteredValue => ({ userEnteredValue })) }, strict: false, showCustomUi: true }); // Hydra employees are only ever Booked
 
 // Drop-down of freelancer names (null until the FREELANCERS tab exists). Names already in the sheet that aren't in the list stay valid.
 const crewRule = o => {
@@ -407,10 +420,13 @@ function placeCrew(o, p, names, cell = () => []) {
   const reqs = [];
   let at = p.lastRow + 1;
   names.forEach((name, i) => {
-    if (i < p.slots.length) { reqs.push(personReq(o.tab, p.slots[i], name, width), ...cell(p.slots[i])); return; }
+    if (i < p.slots.length) {
+      reqs.push(personReq(o.tab, p.slots[i], name, width), { setDataValidation: { range: rng(o.tab, p.slots[i], 1, width, p.slots[i] + 1), rule: bookRule('', isEmpName(name)) } }, ...cell(p.slots[i]));
+      return;
+    }
     reqs.push({ insertDimension: { range: { sheetId: o.tab.sheetId, dimension: 'ROWS', startIndex: at, endIndex: at + 1 }, inheritFromBefore: true } },
       personReq(o.tab, at, name, width), ...(rule ? [{ setDataValidation: { range: rng(o.tab, at, 0, 1, at + 1), rule } }] : []),
-      { setDataValidation: { range: rng(o.tab, at, 1, width, at + 1), rule: bookRule() } }, ...cell(at));
+      { setDataValidation: { range: rng(o.tab, at, 1, width, at + 1), rule: bookRule('', isEmpName(name)) } }, ...cell(at));
     at++;
   });
   return reqs;
@@ -437,7 +453,7 @@ let selected = ymd();
 export function renderCrewing(o) {
   const { tab, rows, tools, body } = o;
   const data = parseCrewing(rows);
-  const isEmp = name => !!fl.list.find(f => norm(f.name) === norm(name))?.employee;
+  const isEmp = isEmpName;
   const all = calendarItems(data.projects, isEmp);
   const stored = store.get(VIEW, 'days');
   const view = ['sheet', 'calendar'].includes(stored) ? stored : 'days';
@@ -610,7 +626,7 @@ function calendarView(o, all, colours) {
             h('p', { class: 'section-title' }, h('i', { class: 'dot', style: { '--c': colourOf(p) } }), p),
             crew.length ? h('div', { class: 'group' }, crew.map(b => h('div', { class: 'row' },
               h('span', { class: 'row-main' }, h('b', {}, b.person), b.note && !noteIsName(b.note, b.person) ? h('small', {}, b.note) : null),
-              b.emp ? h('span', { class: 'tag emp' }, 'Hydra') : null,
+              b.emp ? h('span', { class: 'tag emp' }, hydraLabel(fl.list.find(f => norm(f.name) === norm(b.person)) || { tags: [] })) : null,
               day.filter(x => x.kind !== 'project' && x.person === b.person).length > 1 ? h('span', { class: 'tag warn' }, 'Double-booked') : null,
               h('span', { class: 'tag' + (b.kind === 'ok' ? ' good' : '') }, b.kind === 'ok' ? 'Booked' : 'Pencilled'))))
               : h('p', { class: 'small empty' }, 'Nobody booked yet'));
@@ -633,14 +649,15 @@ async function write(o, row, col, expected, work) {
 
 function editBooking(o, p, person, c) {
   const cell = person.cells.get(c.col);
-  const status = h('select', {}, [['none', 'Not booked'], ['pencil', 'Pencilled'], ['ok', 'Booked']].map(([v, l]) =>
+  const emp = isEmpName(person.name);
+  const status = h('select', {}, [['none', 'Not booked'], ...(emp ? [] : [['pencil', 'Pencilled']]), ['ok', 'Booked']].map(([v, l]) =>
     h('option', { value: v, selected: v === (cell ? (cell.ok ? 'ok' : 'pencil') : 'none') }, l)));
   const btn = saveBtn('Save');
   const m = o.dialog(person.name, h('form', { class: 'form', onsubmit: e => {
     e.preventDefault();
     btn.disabled = true;
     m.close();
-    write(o, person.row, c.col, cellText(o.rows, person.row, c.col), () => batch(markReq(o.tab, person.row, c.col, status.value, person.name)));
+    write(o, person.row, c.col, cellText(o.rows, person.row, c.col), () => batch(markReq(o.tab, person.row, c.col, status.value, person.name, emp)));
   } },
   h('p', { class: 'muted' }, `${p.name} · ${c.label}`),
   field('Status', status),
@@ -649,7 +666,7 @@ function editBooking(o, p, person, c) {
 
 // State of one booking cell: 'ok' = Booked (name, green), 'pencil' = Pencilled (name, white), 'none' = empty.
 // Returns requests (the cell and its drop-down).
-const markReq = (tab, row, col, state, name) => [
+const markReq = (tab, row, col, state, name, emp = false) => [
   { updateCells: {
     range: rng(tab, row, col),
     rows: [{ values: [{ userEnteredValue: val(state === 'none' ? '' : name), userEnteredFormat: fmt(state === 'ok' ? GREEN : WHITE, false, 'CENTER') }] }],
@@ -822,7 +839,7 @@ async function pickCrew(o, p, c) {
   const listEl = h('div', {});
   const form = h('form', { class: 'form' }, search, tagsEl, listEl);
   const btn = saveBtn('Save');
-  form.append(h('p', { class: 'hint' }, 'Tap once to pencil someone in, again to book them (green in the sheet), again to remove.'), btn,
+  form.append(h('p', { class: 'hint' }, 'Tap once to pencil someone in, again to book them (green in the sheet), again to remove. Hydra people are booked straight away.'), btn,
     h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onclick: () => { m.close(); editDate(o, p, c); } }, 'Edit or remove this day')));
   const cycle = { undefined: 'pencil', pencil: 'ok', ok: undefined };
   function draw() {
@@ -833,7 +850,7 @@ async function pickCrew(o, p, c) {
       const k = norm(f.name), st = state.get(k);
       return h('button', {
         type: 'button', class: 'row' + (st === 'ok' ? ' confirmed' : ''), 'aria-label': `${f.name}: ${st === 'ok' ? 'confirmed' : st === 'pencil' ? 'pencilled' : 'not booked'}`,
-        onclick: () => { const n = cycle[st]; if (n) state.set(k, n); else state.delete(k); form.dispatchEvent(new Event('input')); draw(); },
+        onclick: () => { const n = f.employee && st === undefined ? 'ok' : f.employee ? undefined : cycle[st]; if (n) state.set(k, n); else state.delete(k); form.dispatchEvent(new Event('input')); draw(); },
       }, h('span', { class: 'row-main' }, h('b', {}, f.name), f.employee || f.tags.length ? h('span', { class: 'tag-line' }, personChips(f)) : f.legacy ? h('small', {}, 'Not in the freelancer list') : null),
       st ? h('span', { class: 'tag ' + (st === 'ok' ? 'good' : '') }, st === 'ok' ? 'Booked' : 'Pencilled') : null);
     })) : h('p', { class: 'muted center-text' }, fl.list.length ? 'Nobody matches.' : 'The freelancer list is empty.'));
@@ -844,14 +861,14 @@ async function pickCrew(o, p, c) {
     const reqs = [];
     for (const x of p.people) {
       const k = norm(x.name), now = state.get(k) || 'none', before = was.get(k) || 'none';
-      if (now !== before) reqs.push(...markReq(o.tab, x.row, c.col, now, x.name));
+      if (now !== before) reqs.push(...markReq(o.tab, x.row, c.col, now, x.name, isEmpName(x.name)));
     }
     const add = [...state].filter(([k]) => !p.people.some(x => norm(x.name) === k));
     if (!reqs.length && !add.length) { m.close(); return; }
     btn.disabled = true;
     m.close();
     const byRow = [];
-    reqs.push(...placeCrew(o, p, add.map(([k]) => names.get(k).name), row => { const i = byRow.length; byRow.push(row); return markReq(o.tab, row, c.col, add[i][1], names.get(add[i][0]).name); }));
+    reqs.push(...placeCrew(o, p, add.map(([k]) => names.get(k).name), row => { const i = byRow.length; byRow.push(row); return markReq(o.tab, row, c.col, add[i][1], names.get(add[i][0]).name, isEmpName(names.get(add[i][0]).name)); }));
     write(o, p.lastRow, 0, cellText(o.rows, p.lastRow, 0), () => batch(reqs));
   });
   draw();

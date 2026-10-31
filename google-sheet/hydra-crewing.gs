@@ -9,6 +9,7 @@
 //       – under it, 6 crew rows. Column A of each has a drop-down listing the FREELANCERS tab
 //       – every booking box to the right has a drop-down: Pencilled or Booked
 //       – two blank rows follow, then your next project can go below
+//   • Hydra's own people (a company email in the FREELANCERS tab) only get Booked, never Pencilled.
 //   • Choosing Pencilled or Booked puts the person's name (column A) in the box. Booked turns it green,
 //     Pencilled leaves it white. Delete the box's contents to clear it.
 //   • Change the name in column A and the boxes in that row follow.
@@ -20,6 +21,7 @@ const CREW_ROWS_ = 6;
 const DATE_COLS_ = 7;
 const HEAD_GREY_ = '#b7b7b7';
 const BOOKED_GREEN_ = '#34a853';
+const COMPANY_DOMAIN_ = 'hydradesign.co.uk';
 const PENCILLED_ = 'Pencilled';
 const BOOKED_ = 'Booked';
 const LIST_ = SpreadsheetApp.DataValidationCriteria.VALUE_IN_LIST;
@@ -40,7 +42,7 @@ function nameEdit_(e, sheet, cell) {
   const row = cell.getRow();
   const title = String(cell.getDisplayValue()).trim();
   const rule = cell.getDataValidation();
-  if (rule) { renameCrew_(sheet, row, String(e.oldValue || '').trim(), title); return; } // an existing crew row
+  if (rule) { renameCrew_(sheet, row, String(e.oldValue || '').trim(), title); return; } // an existing crew row: its boxes follow the new name
   if (!title || cell.getFontWeight() === 'bold') return; // clearing, or an existing heading
   const width = 1 + DATE_COLS_;
   if (sheet.getMaxColumns() < width) sheet.insertColumnsAfter(sheet.getMaxColumns(), width - sheet.getMaxColumns());
@@ -51,19 +53,37 @@ function nameEdit_(e, sheet, cell) {
   spawnProject_(sheet, row, width);
 }
 
-// A different freelancer picked in column A: their booked boxes in that row take the new name (or empty if the name was cleared)
+// A different freelancer picked in column A: their booked boxes in that row take the new name (or empty if the name was cleared),
+// and the row's drop-downs match the person (Hydra employees only get Booked)
 function renameCrew_(sheet, row, oldName, newName) {
-  if (!oldName || oldName === newName) return;
   const width = sheet.getLastColumn();
   if (width < 2) return;
+  const emp = isEmployee_(sheet.getParent(), newName);
   const boxes = sheet.getRange(row, 2, 1, width - 1);
   const values = boxes.getDisplayValues()[0];
+  const rules = boxes.getDataValidations()[0];
   values.forEach((v, i) => {
-    if (String(v).trim() !== oldName) return;
+    const rule = rules[i];
+    if (!rule || rule.getCriteriaType() !== LIST_) return; // not a booking box
     const box = sheet.getRange(row, 2 + i);
-    if (newName) { box.setValue(newName); box.setDataValidation(bookRule_(newName)); }
-    else resetBox_(box);
+    const val = String(v).trim();
+    if (oldName && val === oldName && oldName !== newName) {
+      if (newName) { box.setValue(newName); box.setDataValidation(bookRule_(newName, emp)); }
+      else resetBox_(box);
+    } else {
+      box.setDataValidation(bookRule_(val === newName ? newName : '', emp));
+    }
   });
+}
+
+// Is this person one of Hydra's own (a company email in the FREELANCERS tab)?
+function isEmployee_(ss, name) {
+  if (!name) return false;
+  const people = ss.getSheets().filter(s => FREELANCER_TAB_.test(s.getName()))[0];
+  if (!people || people.getLastRow() < 2) return false;
+  const rows = people.getRange(2, 1, people.getLastRow() - 1, 2).getDisplayValues();
+  const hit = rows.filter(r => String(r[0]).trim().toLowerCase() === name.toLowerCase())[0];
+  return !!hit && String(hit[1]).toLowerCase().trim().endsWith('@' + COMPANY_DOMAIN_);
 }
 
 function spawnProject_(sheet, row, width) {
@@ -97,17 +117,17 @@ function spawnProject_(sheet, row, width) {
 
 // ---- booking boxes ----
 
-// Pencilled / Booked (plus the person's name once chosen, so the box never looks invalid)
-function bookRule_(name) {
+// Pencilled / Booked (Hydra employees: Booked only), plus the person's name once chosen so the box never looks invalid
+function bookRule_(name, emp) {
   return SpreadsheetApp.newDataValidation()
-    .requireValueInList((name ? [name] : []).concat([PENCILLED_, BOOKED_]), true)
+    .requireValueInList((name ? [name] : []).concat(emp ? [] : [PENCILLED_]).concat([BOOKED_]), true)
     .setAllowInvalid(true).build();
 }
 
-function resetBox_(box) {
+function resetBox_(box, emp) {
   box.clearContent();
   box.setBackground('#ffffff');
-  box.setDataValidation(bookRule_(''));
+  box.setDataValidation(bookRule_('', emp));
 }
 
 function bookingEdit_(sheet, range) {
@@ -130,9 +150,11 @@ function bookingEdit_(sheet, range) {
         if (!names[r]) { box.clearContent(); SpreadsheetApp.getActive().toast('Pick a name in column A first.', 'Project Crewing', 5); continue; }
         box.setValue(names[r]);
         box.setBackground(picked === BOOKED_ ? BOOKED_GREEN_ : '#ffffff');
-        box.setDataValidation(bookRule_(names[r]));
+        box.setDataValidation(bookRule_(names[r], isEmployee_(sheet.getParent(), names[r])));
       } else if (!v && greens[i][j] !== '#ffffff') {
-        resetBox_(box); // cleared: back to white, ready for a new choice
+        const r = top + i;
+        if (!(r in names)) names[r] = String(sheet.getRange(r, 1).getDisplayValue()).trim();
+        resetBox_(box, isEmployee_(sheet.getParent(), names[r])); // cleared: back to white, ready for a new choice
       }
     }
   }

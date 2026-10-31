@@ -25,8 +25,9 @@ const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true
 // Hydra's own people are the ones with a company email (@hydradesign.co.uk). They are listed with the freelancers so they can be
 // booked onto jobs too, and show in purple everywhere to tell them apart.
 const isEmployeeEmail = email => !!CONFIG.workspaceDomain && email.toLowerCase().endsWith('@' + CONFIG.workspaceDomain.toLowerCase());
-const hydraChip = () => h('span', { class: 'initials tag-purple' }, 'Hydra');
-export const personChips = f => [f.employee ? hydraChip() : null, ...f.tags.map(tagChip)];
+// One purple bubble for Hydra's own people: "Hydra - Project Manager". Freelancers get a bubble per specialism.
+export const hydraLabel = f => 'Hydra' + (f.tags.length ? ' - ' + f.tags.join(', ') : '');
+export const personChips = f => f.employee ? [h('span', { class: 'initials tag-purple' }, hydraLabel(f))] : f.tags.map(tagChip);
 
 // Rows → [{ row, name, email, phone, tags, employee }]: Hydra team first (sheet order), then freelancers by name
 // (row = index in the sheet, for editing)
@@ -52,7 +53,7 @@ export async function loadFreelancers(tabs) {
 // A specialism tag, coloured the same everywhere
 export const tagColour = t => COLOURS[[...t.toLowerCase()].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7) % COLOURS.length];
 export const tagChip = t => h('span', { class: 'initials tag-' + tagColour(t) }, t);
-export const specialismOptions = (list = []) => [...new Set([...(CONFIG.specialisms || []), ...list.flatMap(f => f.tags)])];
+export const specialismOptions = (list = []) => [...new Set([...(CONFIG.specialisms || []), ...list.filter(f => !f.employee).flatMap(f => f.tags)])]; // employees' job titles aren't skills
 
 // ---------- the Freelancers tab ----------
 
