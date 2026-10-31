@@ -4,7 +4,7 @@
 // Keep the layout in step with spawnReqs() in js/crewing.js: the app builds the same thing.
 //
 //   • Type a project name in column A on an empty row (the row above it empty too) and it becomes a project:
-//       – the name row turns grey and bold, with a date drop-down (date picker) in each column to its right
+//       – the name row turns grey and bold, with a date drop-down in each column to its right (a list of dates from a hidden DATES tab)
 //       – under it, 6 crew rows. Column A of each has a drop-down listing the FREELANCERS tab
 //       – two blank rows follow, then your next project can go below
 //   • Colour a crew cell green = that person is CONFIRMED for that date. Text without green = pencilled in.
@@ -15,6 +15,8 @@ const FREELANCER_TAB_ = /^freelancers?$/i;
 const CREW_ROWS_ = 6;
 const DATE_COLS_ = 7;
 const HEAD_GREY_ = '#b7b7b7';
+const DATES_TAB_ = 'DATES';
+const DATES_ROWS_ = 220; // today − 14 days, then one row per day (formulas, so the list rolls forward)
 
 function crewingEdit_(e) {
   const cell = e.range;
@@ -47,7 +49,7 @@ function spawnProject_(sheet, row, width) {
 
   const dates = sheet.getRange(row, 2, 1, width - 1);
   dates.setNumberFormat('ddd d mmm')
-    .setDataValidation(SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(true).build());
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInRange(datesList_(sheet.getParent(), sheet), true).setAllowInvalid(true).build());
 
   const crew = sheet.getRange(row + 1, 1, CREW_ROWS_, width);
   crew.setBackground('#ffffff').setFontWeight('normal').setHorizontalAlignment('center');
@@ -60,4 +62,18 @@ function spawnProject_(sheet, row, width) {
   } else {
     SpreadsheetApp.getActive().toast('Add a FREELANCERS tab (Name in column A) to get the crew drop-downs.', 'Project Crewing', 8);
   }
+}
+
+// The hidden DATES tab: a column of consecutive dates starting 14 days ago, for the date drop-downs. Made on first use.
+function datesList_(ss, back) {
+  let tab = ss.getSheetByName(DATES_TAB_);
+  if (!tab) {
+    tab = ss.insertSheet(DATES_TAB_);
+    tab.getRange('A1').setFormula('=TODAY()-14');
+    tab.getRange(2, 1, DATES_ROWS_ - 1, 1).setFormulaR1C1('=R[-1]C+1');
+    tab.getRange(1, 1, DATES_ROWS_, 1).setNumberFormat('ddd d mmm yyyy');
+    tab.hideSheet();
+    ss.setActiveSheet(back); // inserting a tab switches to it
+  }
+  return tab.getRange(1, 1, DATES_ROWS_, 1);
 }

@@ -334,7 +334,28 @@ const DATE_COLS = 7;
 const BLOCK_ROWS = 1 + CREW_ROWS + 2; // header, crew rows, two blank rows before the next project
 const DATE_FORMAT = { type: 'DATE', pattern: 'ddd d mmm' };
 const DATE_FIELDS = FMT_FIELDS + ',userEnteredFormat.numberFormat';
-const dateRule = { condition: { type: 'DATE_IS_VALID' }, strict: false, showCustomUi: true };
+// Date drop-down: lists the dates on the hidden DATES tab (today − 14 days onwards; typing any other date is still allowed)
+const DATES_TAB = 'DATES';
+const DATES_ROWS = 220;
+const dateRule = { condition: { type: 'ONE_OF_RANGE', values: [{ userEnteredValue: `='${DATES_TAB}'!$A$1:$A$${DATES_ROWS}` }] }, strict: false, showCustomUi: true };
+let datesReady = false;
+const batchD = async reqs => { await ensureDates(); return batch(reqs); }; // for writes that use the date drop-down
+// Make the hidden DATES tab if nobody has yet (the sheet's script makes the same one)
+async function ensureDates() {
+  if (datesReady) return;
+  try {
+    const d = await batch([{ addSheet: { properties: { title: DATES_TAB, hidden: true, gridProperties: { rowCount: DATES_ROWS, columnCount: 1 } } } }]);
+    const sheetId = d.replies[0].addSheet.properties.sheetId;
+    await batch([{ updateCells: {
+      range: { sheetId, startRowIndex: 0, endRowIndex: DATES_ROWS, startColumnIndex: 0, endColumnIndex: 1 },
+      rows: Array.from({ length: DATES_ROWS }, (_, i) => ({ values: [{ userEnteredValue: { formulaValue: i ? `=A${i}+1` : '=TODAY()-14' }, userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'ddd d mmm yyyy' } } }] })),
+      fields: 'userEnteredValue,userEnteredFormat.numberFormat',
+    } }]);
+  } catch (e) {
+    if (!/already exists/i.test(errMsg(e))) throw e;
+  }
+  datesReady = true;
+}
 
 // Drop-down of freelancer names (null until the FREELANCERS tab exists). Names already in the sheet that aren't in the list stay valid.
 const crewRule = o => {
@@ -668,7 +689,7 @@ function addDay(o, p) {
     const cell = custom ? { userEnteredValue: val(custom), userEnteredFormat: fmt(GREY, true, 'CENTER') } : dateCell(parseYmd(date.value));
     const col = Math.max(0, ...p.cols.map(c => c.col)) + 1;
     const cols = o.tab.gridProperties?.columnCount || 26;
-    write(o, p.row, col, cellText(o.rows, p.row, col), () => batch([
+    write(o, p.row, col, cellText(o.rows, p.row, col), () => batchD([
       ...(col + 1 > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: col + 1 - cols + 2 } }] : []),
       { updateCells: { range: rng(o.tab, p.row, col), rows: [{ values: [cell] }], fields: DATE_FIELDS } },
       ...(custom ? [] : [{ setDataValidation: { range: rng(o.tab, p.row, col), rule: dateRule } }]),
@@ -706,7 +727,7 @@ function newProject(o, data) {
     btn.disabled = true;
     m.close();
     const at = data.lastRow < 0 ? 0 : data.lastRow + 3; // two blank rows between projects, like the sheet
-    const work = () => batch([
+    const work = () => batchD([
       ...growRows(o.tab, at + BLOCK_ROWS),
       ...((o.tab.gridProperties?.columnCount || 26) < 1 + DATE_COLS ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: 1 + DATE_COLS - o.tab.gridProperties.columnCount } }] : []),
       ...spawnReqs(o, at, name.value.trim(), date.value ? [parseYmd(date.value)] : []),
@@ -914,7 +935,7 @@ async function importFromCalendar(o, data) {
         }
       }
       const cols = o.tab.gridProperties?.columnCount || 26;
-      const work = () => batch([
+      const work = () => batchD([
         ...growRows(o.tab, at + 1),
         ...(needCols > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: needCols - cols + 2 } }] : []),
         ...reqs,
