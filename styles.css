@@ -606,3 +606,30 @@ body.scrolled .navbar::before { opacity: 1; }
 .brand-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 28px 0 8px; color: var(--label3); }
 .brand-foot .wordmark { width: 92px; color: var(--label2); }
 .brand-foot p { margin: 0; font-size: 0.8125rem; color: var(--label2); }
+
+/* ---- Project Crewing ---- */
+.chip.static { pointer-events: none; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--tint)); margin-right: 6px; }
+.chip .dot { margin-right: 0; }
+.tag.warn { background: var(--orange-soft); color: var(--orange); margin-left: auto; }
+.crew-project { margin-bottom: 22px; }
+.crew-project h3 { margin: 0 4px 8px; font-size: 1.1765rem; line-height: 1.25; font-weight: 700; letter-spacing: -0.023em; display: flex; justify-content: space-between; align-items: baseline; }
+.crew-project h3 .count { font-size: 0.7647rem; color: var(--label2); font-weight: 400; }
+.crew-scroll { overflow-x: auto; background: var(--bg2); border-radius: var(--radius); overscroll-behavior-x: contain; }
+.crew-grid { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+.crew-grid th, .crew-grid td { padding: 0; font-weight: 400; border-bottom: 0.5px solid var(--sep); }
+.crew-grid tbody tr:last-child > * { border-bottom: 0; }
+.crew-grid td, .crew-grid th.crew-date { min-width: 96px; border-left: 0.5px solid var(--sep); }
+.crew-grid th > button, .crew-cell {
+  display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; padding: 0 10px;
+  border: 0; background: none; color: var(--label); font-size: 0.882rem; font-weight: 400; text-align: center;
+}
+.crew-grid th > button:active, .crew-cell:active { background: var(--fill2); }
+.crew-person, .crew-corner { position: sticky; left: 0; z-index: 1; background: var(--bg2); min-width: 108px; max-width: 150px; }
+.crew-grid .crew-person > button { justify-content: flex-start; text-align: left; padding: 0 12px; }
+.crew-grid .crew-date > button { font-size: 0.7647rem; font-weight: 600; color: var(--label2); }
+.crew-cell.on { background: var(--green-soft); font-weight: 600; }
+.crew-cell .icon svg { width: 1.1em; height: 1.1em; }
+.crew-status { margin: 0 4px 12px; }
+.crew-day-project .section-title { display: flex; align-items: center; }
+.crew-day-project .section-title .dot { margin-right: 8px; }

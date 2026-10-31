@@ -9,6 +9,7 @@ import { CONFIG } from '../config.js';
 import { tokenValid, myInitials } from './google.js';
 import { icon } from './icons.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
+import { isCrewingTab } from './crewing.js';
 import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, initialsTag, whoPicker, whoOptions, guardedWrite, setDone, insertTask } from './sheets.js';
 
 export function renderTasks(root, ctx) {
@@ -43,7 +44,7 @@ export function renderTasks(root, ctx) {
       if (!ctx.alive) return;
       status.textContent = `Live · updated ${hm(new Date())}`;
       const sig = JSON.stringify([...grids]);
-      lists = tabs.filter(t => grids.has(t.sheetId) && isListTab(t, grids.get(t.sheetId)))
+      lists = tabs.filter(t => !isCrewingTab(t) && grids.has(t.sheetId) && isListTab(t, grids.get(t.sheetId)))
         .map(tab => ({ tab, ...parseList(grids.get(tab.sheetId)) }));
       if (sig === lastSig && !force) return;
       lastSig = sig;

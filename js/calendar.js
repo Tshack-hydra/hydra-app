@@ -19,6 +19,9 @@ const calUrl = (calId, rest = '') => `${API}/calendars/${encodeURIComponent(calI
 let calendars = null;
 let eventColors = null; // Google's event colour palette: colorId -> { background, foreground }
 
+// Forget the cached calendar list (a calendar was just created or added) so the next load re-reads it
+export const forgetCalendars = () => { calendars = null; };
+
 async function getCalendars() {
   if (calendars) return calendars;
   const d = await gfetch(`${API}/users/me/calendarList?maxResults=250`);

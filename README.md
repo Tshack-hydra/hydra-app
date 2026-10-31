@@ -6,6 +6,7 @@ A phone app for the Hydra team (iPhone and Android) with five sections:
 |---|---|---|
 | **Calendar** | Day agenda (today first, arrow loads earlier days) or month grid across your Google calendars; create, edit and delete events and tag them with a job | Google Calendar |
 | **Tasks** | Every open task assigned to you (or `ALL`) across all the to-do tabs, in one list. Tick to mark done, + to add. *Everyone* shows the whole team's open tasks | Google Sheets (to-do tabs) |
+| **Sheets → Project Crewing** | The crew sheet (people × dates per project) as a tidy grid, or as a month calendar. Tap a cell to book / un-book someone. Also mirrored into a shared Google calendar called *Project Crewing* | Google Sheets + Calendar |
 | **Sheets** | A live view of every tab in the Hydra spreadsheet. New tabs, rows and columns show up within about 30 seconds. Anyone can edit | Google Sheets |
 | **Site Visits** | Photos and notes from a site visit, saved into the job folder | Dropbox → `<job>/Venue Information/Site Visits/<date> - <title>/` |
 | **Receipts** | Photo of a receipt + job number, sent to Dext, with a copy kept in Dropbox | Dext + Dropbox → `<job>/Accommodation, Travel, Food/Receipts/` |

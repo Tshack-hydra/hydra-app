@@ -178,7 +178,7 @@ let slideFrom = null;
     const skip = e.touches.length !== 1 || isModalOpen() || document.body.classList.contains('gated')
       || t.clientX < EDGE || t.clientX > innerWidth - EDGE
       // things that scroll sideways or take typing keep their own gestures
-      || e.target.closest('.chips, .sheet-tabs, .grid-wrap, input, textarea, select, [contenteditable]');
+      || e.target.closest('.chips, .sheet-tabs, .grid-wrap, .crew-scroll, input, textarea, select, [contenteditable]');
     start = skip ? null : { x: t.clientX, y: t.clientY, at: Date.now() };
   }, { passive: true });
   addEventListener('touchend', e => {

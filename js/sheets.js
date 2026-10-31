@@ -13,6 +13,7 @@
 import { CONFIG } from '../config.js';
 import { gfetch, tokenValid, myInitials } from './google.js';
 import { icon, sheetsLogo } from './icons.js';
+import { isCrewingTab, renderCrewing, addCrewingTab } from './crewing.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
@@ -308,10 +309,20 @@ export function renderSheets(root, ctx) {
   const dialog = (title, content) => modal(title, content, { onClose: () => { if (pending) { pending = false; render(); } } });
 
   function renderTabs() {
-    tabsEl.replaceChildren(...tabs.map(t => h('button', {
+    fill(tabsEl, tabs.map(t => h('button', {
       class: 'sheet-tab' + (t === active ? ' active' : ''), role: 'tab',
       onclick: () => { if (t === active) return; active = t; rows = null; lastSig = ''; store.set('hydra.sheets.active', t.sheetId); renderTabs(); body.replaceChildren(spinner()); tools.replaceChildren(); refresh(true); },
-    }, t.title)));
+    }, t.title)),
+    // No Project Crewing tab yet: offer to make one (formatted like the team's crew sheet)
+    tabs.some(isCrewingTab) ? null : h('button', { class: 'sheet-tab add', onclick: async e => {
+      e.target.disabled = true;
+      try {
+        const t = await addCrewingTab();
+        store.set('hydra.sheets.active', t.sheetId);
+        active = null; rows = null; lastSig = '';
+        await refresh(true);
+      } catch (err) { toast(errMsg(err), 'error'); e.target.disabled = false; }
+    } }, '+ Project Crewing'));
     // keep the active tab in view by scrolling the strip sideways only (scrollIntoView would also jump the page)
     const a = tabsEl.querySelector('.active');
     if (a) {
@@ -331,7 +342,8 @@ export function renderSheets(root, ctx) {
       h('button', { class: 'chip end' + (p.hideDone ? '' : ' off'), 'aria-pressed': String(p.hideDone), onclick: () => setPref('hideDone', !p.hideDone) }, p.hideDone ? 'Show Done' : 'Hide Done'));
     ctx.actions(
       h('a', { class: 'nav-icon', href: `https://docs.google.com/spreadsheets/d/${sid()}/edit#gid=${active.sheetId}`, target: '_blank', rel: 'noopener', 'aria-label': 'Open in Google Sheets' }, sheetsLogo()));
-    renderList(p);
+    if (isCrewingTab(active)) renderCrewing({ tab: active, rows, tools, body, ctx, redraw: render, refresh: () => refresh(true), dialog });
+    else renderList(p);
   }
 
   // ---------- list mode ----------
