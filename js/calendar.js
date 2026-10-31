@@ -152,6 +152,25 @@ export function renderCalendar(root, ctx) {
     }
   }
 
+  let slide = '';
+  function stepMonth(n) {
+    monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1);
+    const now = new Date();
+    selected = ymd(monthStart.getMonth() === now.getMonth() && monthStart.getFullYear() === now.getFullYear() ? now : monthStart);
+    slide = n > 0 ? 'from-right' : 'from-left';
+    load(true);
+  }
+  // swipe left = next month, right = previous (Month view only)
+  let sx = 0, sy = 0, tracking = false;
+  body.addEventListener('pointerdown', ev => { tracking = view === 'month' && ev.isPrimary; sx = ev.clientX; sy = ev.clientY; });
+  body.addEventListener('pointercancel', () => { tracking = false; });
+  body.addEventListener('pointerup', ev => {
+    if (!tracking) return;
+    tracking = false;
+    const dx = ev.clientX - sx, dy = ev.clientY - sy;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5 && !isModalOpen()) stepMonth(dx < 0 ? 1 : -1);
+  });
+
   const monthWeeks = () => Math.ceil(((monthStart.getDay() + 6) % 7 + new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()) / 7);
 
   // ---- Day view: today at the top, arrow above loads earlier days ----
@@ -196,13 +215,13 @@ export function renderCalendar(root, ctx) {
         evs.length > shown.length ? h('span', { class: 'mmore' }, `+${evs.length - shown.length} more`) : null));
     });
     const evs = byDay.get(selected) || [];
-    const step = n => { monthStart = new Date(monthStart.getFullYear(), monthStart.getMonth() + n, 1); selected = ymd(monthStart.getMonth() === new Date().getMonth() && monthStart.getFullYear() === new Date().getFullYear() ? new Date() : monthStart); load(); };
+    const slideCls = slide; slide = '';
     fill(body,
       h('div', { class: 'month-head' },
         h('h2', {}, monthTitle(monthStart)),
-        h('button', { class: 'btn small icon-only', 'aria-label': 'Previous month', onclick: () => step(-1) }, icon('chevron-left')),
-        h('button', { class: 'btn small icon-only', 'aria-label': 'Next month', onclick: () => step(1) }, icon('chevron-right'))),
-      h('div', { class: 'month-grid' },
+        h('button', { class: 'btn small icon-only', 'aria-label': 'Previous month', onclick: () => stepMonth(-1) }, icon('chevron-left')),
+        h('button', { class: 'btn small icon-only', 'aria-label': 'Next month', onclick: () => stepMonth(1) }, icon('chevron-right'))),
+      h('div', { class: 'month-grid ' + slideCls },
         ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => h('span', { class: 'wd', 'aria-hidden': 'true' }, d)),
         cells),
       h('section', { class: 'day' },

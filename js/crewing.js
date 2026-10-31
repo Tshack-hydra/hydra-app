@@ -142,7 +142,7 @@ const noteIsName = (note, person) => {
 
 // ---------- Google Calendar mirror ----------
 
-const calState = { checked: false, loading: false, id: null, err: '', syncing: false, syncedSig: '', msg: '' };
+const calState = { checked: false, loading: false, id: null, err: '', syncing: false, syncedSig: '', msg: '', run: null };
 
 const calUrl = (id, rest = '') => `${CAL}/calendars/${encodeURIComponent(id)}/events${rest}`;
 const hash = (s, seed = 0) => { // cyrb53
@@ -163,7 +163,7 @@ function eventFor(b) {
       'Kept up to date from the Project Crewing tab of the Hydra spreadsheet. Change bookings there or in the app.'].join('\n'),
     start: { date: b.date },
     end: { date: ymd(addDays(parseYmd(b.date), 1)) },
-    extendedProperties: { private: { hydraCrew: '1' } },
+    extendedProperties: { private: { hydraCrew: '1', hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '' } },
   };
 }
 
@@ -248,7 +248,8 @@ async function pushEvents(calId, bookings) {
           if (!/already exists|identifier|duplicate|conflict/i.test(errMsg(err))) throw err;
           return gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body: { ...body, status: 'confirmed' } });
         }));
-    } else if (ex.summary !== body.summary || (ex.description || '') !== body.description || ex.start?.date !== body.start.date) {
+    } else if (ex.summary !== body.summary || (ex.description || '') !== body.description || ex.start?.date !== body.start.date
+      || JSON.stringify(ex.extendedProperties?.private) !== JSON.stringify(body.extendedProperties.private)) {
       jobs.push(() => gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body }));
     }
   }
@@ -263,22 +264,27 @@ function setStatus(msg) {
   if (el) el.textContent = msg;
 }
 
-async function syncCalendar(bookings) {
-  if (!calState.id || calState.syncing) return;
-  const sig = JSON.stringify(bookings.map(b => [b.key, b.person, b.project, b.note]));
-  if (sig === calState.syncedSig) return;
+// Resolves once the calendar matches the sheet (or straight away when it already does / isn't connected)
+function syncCalendar(bookings) {
+  if (!calState.id) return Promise.resolve();
+  if (calState.syncing) return calState.run;
+  const sig = calState.id + JSON.stringify(bookings.map(b => [b.key, b.person, b.project, b.note]));
+  if (sig === calState.syncedSig) return Promise.resolve();
   calState.syncing = true;
   setStatus('Updating Google Calendar…');
-  try {
-    await pushEvents(calState.id, bookings);
-    calState.syncedSig = sig;
-    setStatus(`Google Calendar is up to date · ${bookings.length} booking${bookings.length === 1 ? '' : 's'}`);
-  } catch (e) {
-    if (/not found/i.test(errMsg(e)) && !calState.refound) { calState.refound = true; calState.id = null; calState.checked = false; calState.msg = ''; } // calendar gone: look again, once
-    else setStatus('Couldn’t update Google Calendar: ' + errMsg(e));
-  } finally {
-    calState.syncing = false;
-  }
+  calState.run = (async () => {
+    try {
+      await pushEvents(calState.id, bookings);
+      calState.syncedSig = sig;
+      setStatus(`Google Calendar is up to date · ${bookings.length} booking${bookings.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      if (/not found/i.test(errMsg(e)) && !calState.refound) { calState.refound = true; calState.redo = true; calState.id = null; calState.checked = false; calState.msg = ''; } // calendar gone: look again, once
+      else setStatus('Couldn’t update Google Calendar: ' + errMsg(e));
+    } finally {
+      calState.syncing = false;
+    }
+  })();
+  return calState.run;
 }
 
 // ---------- writing the tab ----------
@@ -348,15 +354,22 @@ export function renderCrewing(o) {
 
   if (!calState.checked && !calState.loading) {
     calState.loading = true;
-    findCalendar().then(id => { calState.id = id; }, e => { calState.err = errMsg(e); })
+    findCalendar().then(async id => {
+      if (id) return id;
+      // None yet: make the shared Project Crewing calendar straight away
+      const r = await createCalendar();
+      if (r.shared === false) toast('Project Crewing calendar created, but couldn’t share it with the team — share it in Google Calendar', 'error');
+      return r.id;
+    }).then(id => { calState.id = id; calState.syncedSig = ''; }, e => { calState.err = errMsg(e); })
       .finally(() => { calState.checked = true; calState.loading = false; if (o.ctx.alive) o.redraw(); });
   }
 
+  const synced = syncCalendar(all); // before drawing, so the Calendar view waits for it
   fill(body,
     calBar(o),
-    view === 'days' ? daysView(o, data) : view === 'sheet' ? sheetView(o, data) : calendarView(all, data, colours),
+    view === 'days' ? daysView(o, data) : view === 'sheet' ? sheetView(o, data) : calendarView(o, all, colours),
     view !== 'calendar' ? h('button', { class: 'btn block', onclick: () => newProject(o, data) }, icon('plus'), 'New project') : null);
-  syncCalendar(all).then(() => { if (!calState.checked && o.ctx.alive) o.redraw(); });
+  synced.then(() => { if (calState.redo) { calState.redo = false; if (o.ctx.alive) o.redraw(); } });
 }
 
 function calBar(o) {
@@ -370,6 +383,7 @@ function calBar(o) {
       try {
         const r = await createCalendar();
         calState.id = r.id;
+        calState.syncedSig = '';
         if (r.shared === false) toast('Calendar created, but couldn’t share it with the team — share it in Google Calendar', 'error');
         else toast('Project Crewing calendar created');
       } catch (err) { toast(errMsg(err), 'error'); }
@@ -404,55 +418,92 @@ function sheetView(o, data) {
 }
 
 // ----- Calendar view: month grid in each project's colour, tap a day to see who is booked -----
-function calendarView(all, data, colours) {
+function calendarView(o, all, colours) {
   const monthStartOf = d => new Date(d.getFullYear(), d.getMonth(), 1);
   if (!month) {
     const next = all.find(b => b.date >= ymd());
     month = monthStartOf(next ? parseYmd(next.date) : new Date());
     if (next && selected < ymd()) selected = next.date;
   }
+  const colourOf = p => colours.get(p) || PALETTE[hash(p) % PALETTE.length];
   const wrap = h('div', {});
-  const draw = () => {
+  let items = [];
+  let state = calState.id ? 'loading' : 'sheet'; // loading | ready | sheet (not connected: show the sheet's own bookings) | error
+  let err = '';
+  let token = 0;
+  const range = () => {
     const gs = addDays(month, -((month.getDay() + 6) % 7));
     const weeks = Math.ceil(((month.getDay() + 6) % 7 + new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()) / 7);
+    return [gs, weeks];
+  };
+
+  // The month shown is read from the Project Crewing Google calendar itself
+  async function load() {
+    if (!calState.id) { state = 'sheet'; draw(); return; }
+    const t = ++token;
+    state = 'loading'; draw();
+    try {
+      await calState.run; // let a sync that is under way finish first
+      const [gs, weeks] = range();
+      const qs = `?singleEvents=true&maxResults=2500&privateExtendedProperty=${encodeURIComponent('hydraCrew=1')}&timeMin=${encodeURIComponent(gs.toISOString())}&timeMax=${encodeURIComponent(addDays(gs, weeks * 7).toISOString())}`;
+      const d = await gfetch(calUrl(calState.id, qs));
+      if (t !== token) return;
+      items = (d.items || []).filter(e => e.status !== 'cancelled' && e.start?.date).map(e => {
+        const p = e.extendedProperties?.private || {};
+        return { project: p.hydraProject || e.summary || '', person: p.hydraPerson || '', date: e.start.date, note: p.hydraNote || '' };
+      }).sort((a, b) => a.project.localeCompare(b.project) || a.person.localeCompare(b.person));
+      state = 'ready';
+    } catch (e) {
+      if (t !== token) return;
+      state = 'error'; err = errMsg(e);
+    }
+    if (o.ctx.alive) draw();
+  }
+
+  function draw() {
+    const shown = state === 'sheet' || state === 'error' ? all : items;
+    const [gs, weeks] = range();
     const byDay = new Map();
-    for (const b of all) (byDay.get(b.date) || byDay.set(b.date, []).get(b.date)).push(b);
+    for (const b of shown) (byDay.get(b.date) || byDay.set(b.date, []).get(b.date)).push(b);
     const today = ymd();
     const mKey = ymd(month).slice(0, 7);
-    const step = n => { month = new Date(month.getFullYear(), month.getMonth() + n, 1); draw(); };
+    const step = n => { month = new Date(month.getFullYear(), month.getMonth() + n, 1); load(); };
     const cells = Array.from({ length: weeks * 7 }, (_, i) => {
       const k = ymd(addDays(gs, i));
       const evs = byDay.get(k) || [];
-      const shown = evs.slice(0, evs.length > 4 ? 3 : 4);
+      const few = evs.slice(0, evs.length > 4 ? 3 : 4);
       return h('button', {
         type: 'button', class: 'mday' + (k === today ? ' today' : '') + (k === selected ? ' sel' : '') + (k.slice(0, 7) !== mKey ? ' out' : ''),
         'aria-label': dayLabel(parseYmd(k)) + (evs.length ? `, ${evs.length} booked` : ''),
-        onclick: () => { selected = k; if (k.slice(0, 7) !== mKey) month = monthStartOf(parseYmd(k)); draw(); },
+        onclick: () => { selected = k; if (k.slice(0, 7) !== mKey) { month = monthStartOf(parseYmd(k)); load(); } else draw(); },
       }, h('span', { class: 'num' }, parseYmd(k).getDate()), h('span', { class: 'chips-day' },
-        shown.map(b => h('span', { class: 'mchip', style: { '--chip-bg': colours.get(b.project) || PALETTE[0], '--chip-fg': '#fff' } }, shortName(b.person))),
-        evs.length > shown.length ? h('span', { class: 'mmore' }, `+${evs.length - shown.length} more`) : null));
+        few.map(b => h('span', { class: 'mchip', style: { '--chip-bg': colourOf(b.project), '--chip-fg': '#fff' } }, shortName(b.person || b.project))),
+        evs.length > few.length ? h('span', { class: 'mmore' }, `+${evs.length - few.length} more`) : null));
     });
     const day = byDay.get(selected) || [];
     const projects = [...new Set(day.map(b => b.project))];
+    const legend = [...new Set(shown.map(b => b.project))].sort();
     fill(wrap,
-      h('div', { class: 'chips' }, [...colours].map(([n, c]) => h('span', { class: 'chip static', style: { '--c': c } }, h('i', { class: 'dot' }), n))),
+      state === 'error' ? h('p', { class: 'error' }, 'Couldn’t read the Google calendar, showing the sheet instead: ' + err) : null,
+      legend.length ? h('div', { class: 'chips' }, legend.map(n => h('span', { class: 'chip static', style: { '--c': colourOf(n) } }, h('i', { class: 'dot' }), n))) : null,
       h('div', { class: 'month-head' },
         h('h2', {}, month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })),
         h('button', { class: 'btn small icon-only', 'aria-label': 'Previous month', onclick: () => step(-1) }, icon('chevron-left')),
         h('button', { class: 'btn small icon-only', 'aria-label': 'Next month', onclick: () => step(1) }, icon('chevron-right'))),
+      state === 'loading' ? h('div', { class: 'loading' }, 'Loading from Google Calendar…') : null,
       h('div', { class: 'month-grid' }, ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => h('span', { class: 'wd', 'aria-hidden': 'true' }, d)), cells),
       h('section', { class: 'day' },
         h('h3', {}, dayLabel(parseYmd(selected)), selected === today ? h('span', { class: 'tag tint' }, 'Today') : null),
         projects.length ? projects.map(p => {
           const crew = day.filter(b => b.project === p);
           return h('div', { class: 'crew-day-project' },
-            h('p', { class: 'section-title' }, h('i', { class: 'dot', style: { '--c': colours.get(p) } }), p),
+            h('p', { class: 'section-title' }, h('i', { class: 'dot', style: { '--c': colourOf(p) } }), p),
             h('div', { class: 'group' }, crew.map(b => h('div', { class: 'row' },
               h('span', { class: 'row-main' }, h('b', {}, b.person), b.note && !noteIsName(b.note, b.person) ? h('small', {}, b.note) : null),
               day.filter(x => x.person === b.person).length > 1 ? h('span', { class: 'tag warn' }, 'Double-booked') : null))));
-        }) : h('p', { class: 'small empty' }, 'Nobody booked')));
-  };
-  draw();
+        }) : h('p', { class: 'small empty' }, state === 'loading' ? '' : 'Nobody booked')));
+  }
+  load();
   return wrap;
 }
 

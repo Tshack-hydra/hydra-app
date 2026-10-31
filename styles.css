@@ -327,6 +327,12 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .month-head { display: flex; align-items: center; gap: 8px; margin: 4px 0 8px; }
 .month-head h2 { flex: 1; margin: 0; font-size: 1.1765rem; line-height: 1.25; font-weight: 700; letter-spacing: -0.023em; }
 .month-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); margin: 0 -12px; }
+.month-grid { touch-action: pan-y; }
+.month-grid.from-right { animation: slide-in-r 0.22s ease-out; }
+.month-grid.from-left { animation: slide-in-l 0.22s ease-out; }
+@keyframes slide-in-r { from { opacity: 0; transform: translateX(24px); } }
+@keyframes slide-in-l { from { opacity: 0; transform: translateX(-24px); } }
+@media (prefers-reduced-motion: reduce) { .month-grid.from-right, .month-grid.from-left { animation: none; } }
 .month-grid .wd { text-align: center; font-size: 0.7647rem; font-weight: 600; color: var(--label2); padding: 4px 0 6px; }
 .mday { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-height: 96px; padding: 4px 1px 2px; border: 0; border-top: 0.5px solid var(--sep); border-radius: 0; background: none; min-width: 0; }
 .mday .num { align-self: center; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; font-size: 0.7647rem; font-variant-numeric: tabular-nums; }
