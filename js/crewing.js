@@ -167,7 +167,7 @@ const hash = (s, seed = 0) => { // cyrb53
   return 4294967296 * (2097151 & h2) + (h1 >>> 0);
 };
 // Google event ids may use a–v and 0–9 only (base 32)
-const eventId = key => 'crew' + hash(key).toString(32) + hash(key, 7).toString(32);
+const eventId = key => 'hc' + hash(key).toString(32) + hash(key, 7).toString(32);
 
 function eventFor(b) {
   const note = b.note && !noteIsName(b.note, b.person) ? b.note : '';
