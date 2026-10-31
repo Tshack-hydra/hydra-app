@@ -14,7 +14,7 @@
 import { CONFIG } from '../config.js';
 import { gfetch } from './google.js';
 import { forgetCalendars, getCalendars, calName, isHolidays } from './calendar.js';
-import { isFreelancersTab, loadFreelancers, tagChip, tagColour, specialismOptions, addFreelancersTab } from './freelancers.js';
+import { isFreelancersTab, loadFreelancers, tagChip, specialismOptions, addFreelancersTab } from './freelancers.js';
 import { icon } from './icons.js';
 import { isGreen, guardedWrite } from './sheets.js';
 import { h, fill, store, field, toast, errMsg, ymd, parseYmd, addDays, dayLabel } from './util.js';
@@ -779,8 +779,8 @@ function daysView(o, data) {
     cards.push(h('section', { class: 'card center' }, h('p', { class: 'muted' }, 'No projects yet. Import project days from your calendar (top right), or add a project below.')));
     return cards;
   }
-  const tagOf = name => fl.list.find(f => norm(f.name) === norm(name))?.tags[0];
-  const who = (name, ok) => h('span', { class: 'initials tag-' + (tagOf(name) ? tagColour(tagOf(name)) : 'gray') + (ok ? '' : ' pencilled'), title: ok ? 'Confirmed' : 'Pencilled' }, name);
+  // crew labels: green = Booked, grey = Pencilled (not tied to their skills)
+  const who = (name, ok) => h('span', { class: 'initials crew-chip ' + (ok ? 'booked' : 'pencil'), title: ok ? 'Booked' : 'Pencilled' }, name);
   for (const p of data.projects) {
     cards.push(h('section', { class: 'crew-project' },
       h('h3', {}, p.name, h('span', { class: 'count' }, `${p.cols.length} day${p.cols.length === 1 ? '' : 's'}`)),
