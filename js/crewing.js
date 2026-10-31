@@ -131,18 +131,24 @@ export function parseCrewing(rows, today = new Date()) {
   return { projects, lastRow };
 }
 
-// One entry per person, project and day
-export function bookingsOf(projects) {
+// Everything the calendar shows, one entry per day:
+//   kind 'project' = a day of a project (a date in its header), with its crew list
+//   kind 'ok' = a person Booked on a project day (green), kind 'pencil' = Pencilled (named, not confirmed)
+export function calendarItems(projects) {
   const out = new Map();
-  for (const p of projects) for (const person of p.people) for (const col of p.cols) {
-    const cell = person.cells.get(col.col);
-    if (!cell?.ok) continue; // only confirmed (green) bookings go to the calendar
-    for (const d of col.dates) {
-      const key = [p.name, person.name, ymd(d)].join('|').toLowerCase();
-      out.set(key, { key, project: p.name, person: person.name, date: ymd(d), note: noteIsName(cell.note, person.name) ? '' : cell.note, label: col.label });
+  for (const p of projects) for (const col of p.cols) for (const d of col.dates) {
+    const date = ymd(d);
+    const crew = p.people.filter(x => x.cells.has(col.col)).map(x => ({ name: x.name, ok: x.cells.get(col.col).ok }));
+    const key = ['p', p.name, date].join('|').toLowerCase();
+    out.set(key, { key, kind: 'project', project: p.name, person: '', date, note: '', label: col.label, crew });
+    for (const person of p.people) {
+      const cell = person.cells.get(col.col);
+      if (!cell) continue;
+      const k = [p.name, person.name, date].join('|').toLowerCase();
+      out.set(k, { key: k, kind: cell.ok ? 'ok' : 'pencil', project: p.name, person: person.name, date, note: noteIsName(cell.note, person.name) ? '' : cell.note, label: col.label });
     }
   }
-  return [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project) || a.person.localeCompare(b.person));
+  return [...out.values()].sort((a, b) => a.date.localeCompare(b.date) || a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind) || a.person.localeCompare(b.person));
 }
 
 const firstName = n => n.split(/\s+/)[0];
@@ -169,15 +175,25 @@ const hash = (s, seed = 0) => { // cyrb53
 // Google event ids may use a–v and 0–9 only (base 32)
 const eventId = key => 'hc' + hash(key).toString(32) + hash(key, 7).toString(32);
 
+// Google's event colours: project days blue, booked green, pencilled grey
+const EVENT_COLOUR = { project: '9', ok: '10', pencil: '8' };
+const FOOTER = 'Kept up to date from the PROJECT CREWING tab of the Hydra spreadsheet. Change bookings there or in the app.';
+
 function eventFor(b) {
   const note = b.note && !noteIsName(b.note, b.person) ? b.note : '';
+  const names = ok => (b.crew || []).filter(x => x.ok === ok).map(x => x.name).join(', ');
+  const summary = b.kind === 'project' ? b.project
+    : `${b.person} · ${b.project}${b.kind === 'pencil' ? ' (pencilled)' : ''}${note ? ` (${note})` : ''}`;
+  const lines = b.kind === 'project'
+    ? [`Project: ${b.project}`, `Day: ${b.label}`, `Booked: ${names(true) || 'nobody yet'}`, ...(names(false) ? [`Pencilled: ${names(false)}`] : [])]
+    : [`Project: ${b.project}`, `Crew: ${b.person}`, `Status: ${b.kind === 'ok' ? 'Booked' : 'Pencilled'}`, ...(note ? [`Note: ${note}`] : []), `Day: ${b.label}`];
   return {
-    summary: `${b.person} · ${b.project}${note ? ` (${note})` : ''}`,
-    description: [`Project: ${b.project}`, `Crew: ${b.person}`, ...(b.note ? [`Booking: ${b.note}`] : []), `Sheet column: ${b.label}`, '',
-      'Kept up to date from the Project Crewing tab of the Hydra spreadsheet. Change bookings there or in the app.'].join('\n'),
+    summary,
+    description: [...lines, '', FOOTER].join('\n'),
+    colorId: EVENT_COLOUR[b.kind],
     start: { date: b.date },
     end: { date: ymd(addDays(parseYmd(b.date), 1)) },
-    extendedProperties: { private: { hydraCrew: '1', hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '' } },
+    extendedProperties: { private: { hydraCrew: '1', hydraKind: b.kind, hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '' } },
   };
 }
 
@@ -262,7 +278,7 @@ async function pushEvents(calId, bookings) {
           if (!/already exists|identifier|duplicate|conflict/i.test(errMsg(err))) throw err;
           return gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body: { ...body, status: 'confirmed' } });
         }));
-    } else if (ex.summary !== body.summary || (ex.description || '') !== body.description || ex.start?.date !== body.start.date
+    } else if (ex.summary !== body.summary || (ex.description || '') !== body.description || ex.start?.date !== body.start.date || (ex.colorId || '') !== body.colorId
       || JSON.stringify(ex.extendedProperties?.private) !== JSON.stringify(body.extendedProperties.private)) {
       jobs.push(() => gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body }));
     }
@@ -282,7 +298,7 @@ function setStatus(msg) {
 function syncCalendar(bookings) {
   if (!calState.id) return Promise.resolve();
   if (calState.syncing) return calState.run;
-  const sig = calState.id + JSON.stringify(bookings.map(b => [b.key, b.person, b.project, b.note]));
+  const sig = calState.id + JSON.stringify(bookings);
   if (sig === calState.syncedSig) return Promise.resolve();
   calState.syncing = true;
   setStatus('Updating Google Calendar…');
@@ -290,7 +306,8 @@ function syncCalendar(bookings) {
     try {
       await pushEvents(calState.id, bookings);
       calState.syncedSig = sig;
-      setStatus(`Google Calendar is up to date · ${bookings.length} booking${bookings.length === 1 ? '' : 's'}`);
+      const days = bookings.filter(b => b.kind === 'project').length, crew = bookings.length - days;
+      setStatus(`Google Calendar is up to date · ${days} project day${days === 1 ? '' : 's'}, ${crew} booking${crew === 1 ? '' : 's'}`);
     } catch (e) {
       if (/not found/i.test(errMsg(e)) && !calState.refound) { calState.refound = true; calState.redo = true; calState.id = null; calState.checked = false; calState.msg = ''; } // calendar gone: look again, once
       else setStatus('Couldn’t update Google Calendar: ' + errMsg(e));
@@ -407,7 +424,7 @@ let selected = ymd();
 export function renderCrewing(o) {
   const { tab, rows, tools, body } = o;
   const data = parseCrewing(rows);
-  const all = bookingsOf(data.projects);
+  const all = calendarItems(data.projects);
   const stored = store.get(VIEW, 'days');
   const view = ['sheet', 'calendar'].includes(stored) ? stored : 'days';
   const setView = v => { store.set(VIEW, v); o.redraw(); };
@@ -491,6 +508,7 @@ function sheetView(o, data) {
 }
 
 // ----- Calendar view: month grid in each project's colour, tap a day to see who is booked -----
+const ORDER = { project: 0, ok: 1, pencil: 2 };
 function calendarView(o, all, colours) {
   const monthStartOf = d => new Date(d.getFullYear(), d.getMonth(), 1);
   if (!month) {
@@ -523,8 +541,8 @@ function calendarView(o, all, colours) {
       if (t !== token) return;
       items = (d.items || []).filter(e => e.status !== 'cancelled' && e.start?.date).map(e => {
         const p = e.extendedProperties?.private || {};
-        return { project: p.hydraProject || e.summary || '', person: p.hydraPerson || '', date: e.start.date, note: p.hydraNote || '' };
-      }).sort((a, b) => a.project.localeCompare(b.project) || a.person.localeCompare(b.person));
+        return { kind: p.hydraKind || 'ok', project: p.hydraProject || e.summary || '', person: p.hydraPerson || '', date: e.start.date, note: p.hydraNote || '' };
+      }).sort((a, b) => a.project.localeCompare(b.project) || a.kind.localeCompare(b.kind) || a.person.localeCompare(b.person));
       state = 'ready';
     } catch (e) {
       if (t !== token) return;
@@ -543,14 +561,14 @@ function calendarView(o, all, colours) {
     const step = n => { month = new Date(month.getFullYear(), month.getMonth() + n, 1); load(); };
     const cells = Array.from({ length: weeks * 7 }, (_, i) => {
       const k = ymd(addDays(gs, i));
-      const evs = byDay.get(k) || [];
+      const evs = (byDay.get(k) || []).slice().sort((a, b) => ORDER[a.kind] - ORDER[b.kind]); // project, then booked, then pencilled
       const few = evs.slice(0, evs.length > 4 ? 3 : 4);
       return h('button', {
         type: 'button', class: 'mday' + (k === today ? ' today' : '') + (k === selected ? ' sel' : '') + (k.slice(0, 7) !== mKey ? ' out' : ''),
-        'aria-label': dayLabel(parseYmd(k)) + (evs.length ? `, ${evs.length} booked` : ''),
+        'aria-label': dayLabel(parseYmd(k)) + (evs.length ? `, ${evs.filter(b => b.kind === 'project').length} project, ${evs.filter(b => b.kind === 'ok').length} booked, ${evs.filter(b => b.kind === 'pencil').length} pencilled` : ''),
         onclick: () => { selected = k; if (k.slice(0, 7) !== mKey) { month = monthStartOf(parseYmd(k)); load(); } else draw(); },
       }, h('span', { class: 'num' }, parseYmd(k).getDate()), h('span', { class: 'chips-day' },
-        few.map(b => h('span', { class: 'mchip', style: { '--chip-bg': colourOf(b.project), '--chip-fg': '#fff' } }, shortName(b.person || b.project))),
+        few.map(b => h('span', { class: 'mchip' + (b.kind === 'project' ? ' proj' : b.kind === 'pencil' ? ' pencil' : ''), style: { '--chip-bg': colourOf(b.project), '--chip-fg': '#fff' } }, b.kind === 'project' ? b.project : shortName(b.person))),
         evs.length > few.length ? h('span', { class: 'mmore' }, `+${evs.length - few.length} more`) : null));
     });
     const day = byDay.get(selected) || [];
@@ -568,13 +586,15 @@ function calendarView(o, all, colours) {
       h('section', { class: 'day' },
         h('h3', {}, dayLabel(parseYmd(selected)), selected === today ? h('span', { class: 'tag tint' }, 'Today') : null),
         projects.length ? projects.map(p => {
-          const crew = day.filter(b => b.project === p);
+          const crew = day.filter(b => b.project === p && b.kind !== 'project').sort((a, b) => ORDER[a.kind] - ORDER[b.kind] || a.person.localeCompare(b.person));
           return h('div', { class: 'crew-day-project' },
             h('p', { class: 'section-title' }, h('i', { class: 'dot', style: { '--c': colourOf(p) } }), p),
-            h('div', { class: 'group' }, crew.map(b => h('div', { class: 'row' },
+            crew.length ? h('div', { class: 'group' }, crew.map(b => h('div', { class: 'row' },
               h('span', { class: 'row-main' }, h('b', {}, b.person), b.note && !noteIsName(b.note, b.person) ? h('small', {}, b.note) : null),
-              day.filter(x => x.person === b.person).length > 1 ? h('span', { class: 'tag warn' }, 'Double-booked') : null))));
-        }) : h('p', { class: 'small empty' }, state === 'loading' ? '' : 'Nobody booked')));
+              day.filter(x => x.kind !== 'project' && x.person === b.person).length > 1 ? h('span', { class: 'tag warn' }, 'Double-booked') : null,
+              h('span', { class: 'tag' + (b.kind === 'ok' ? ' good' : '') }, b.kind === 'ok' ? 'Booked' : 'Pencilled'))))
+              : h('p', { class: 'small empty' }, 'Nobody booked yet'));
+        }) : h('p', { class: 'small empty' }, state === 'loading' ? '' : 'No projects on this day')));
   }
   load();
   return wrap;

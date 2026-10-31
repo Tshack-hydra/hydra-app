@@ -80,7 +80,7 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
   tab; every booking box has a drop-down **Pencilled / Booked**) + two blank rows.
   Picking either puts the person's name (col A) in the box; **Booked = green, Pencilled = white, empty = not booked.**
   The Apps Script does the name + colour (and re-validates the box with `[name, Pencilled, Booked]` so it never looks invalid).
-  The app writes the same (`markReq`). Only Booked reaches the calendar.
+  The app writes the same (`markReq`). Booked and Pencilled both reach the calendar.
 - `google-sheet/hydra-crewing.gs` (second file of the sheet's Apps Script; `onEdit` in hydra-sections.gs calls `crewingEdit_`):
   typing a name in A on an empty row spawns the block. `spawnReqs()` in crewing.js writes the identical layout from the app
   (New project / Import) — keep the two in step. Spare crew rows (A has a drop-down, no name) are "slots" the app fills first.
@@ -88,8 +88,10 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
   "8th & 11th Jan' 2027"); `parseDates` resolves a missing year to the first date on/after the previous column.
 - Views: Days (default) | Sheet (grid) | Calendar (`hydra.crew.view`). Calendar view is read from the Google calendar.
 - Google Calendar mirror "Project Crewing": auto-created from the app, shared with the domain (writer), id stored in the
-  spreadsheet's developer metadata (`hydraCrewingCalendar`). One all-day event per confirmed person/project/day with a
-  deterministic id (so concurrent syncs don't duplicate) and `hydraCrew=1`; synced whenever the view opens and the bookings changed.
+  spreadsheet's developer metadata (`hydraCrewingCalendar`). All-day events with deterministic ids (letters a–v and digits
+  only! so concurrent syncs don't duplicate) and `hydraCrew=1`, three kinds (`hydraKind`): `project` (one per header date,
+  blue, lists the crew), `ok` (Booked person, green), `pencil` (Pencilled person, grey). Synced whenever the view opens and
+  the items changed; the app's Calendar view is read back from the Google calendar.
 - `tasks.js` and the list view skip this tab. A "+ PROJECT CREWING" tab button creates an empty one.
 
 ## Freelancers & crew days
