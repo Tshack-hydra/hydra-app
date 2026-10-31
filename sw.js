@@ -9,7 +9,7 @@ const CACHE = 'hydra-' + BUILD;
 const SHELL = [
   './', 'index.html', 'styles.css', 'config.js', 'manifest.webmanifest',
   'js/app.js', 'js/util.js', 'js/icons.js', 'js/google.js', 'js/dropbox.js', 'js/jobs.js',
-  'js/calendar.js', 'js/tasks.js', 'js/sheets.js', 'js/crewing.js', 'js/sitevisits.js', 'js/receipts.js', 'js/settings.js',
+  'js/calendar.js', 'js/tasks.js', 'js/sheets.js', 'js/crewing.js', 'js/freelancers.js', 'js/sitevisits.js', 'js/receipts.js', 'js/settings.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/hydra-wordmark.png',
 ];
 

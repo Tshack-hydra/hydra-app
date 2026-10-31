@@ -33,6 +33,9 @@ export const CONFIG = {
   // Colours: gray, red, orange, yellow, green, teal, blue, purple. Anyone not listed shows in gray.
   teamColours: { ALL: 'gray', TS: 'orange', SP: 'green', MR: 'blue', DA: 'purple' },
 
+  // Specialism tags offered for freelancers (people can also type new ones in the app)
+  specialisms: ['Lighting', 'Audio', 'Video', 'General Tech'],
+
   receiptCategories: [
     'Travel', 'Fuel', 'Parking', 'Accommodation', 'Food & Drink',
     'Equipment', 'Consumables', 'Equipment Hire', 'Postage & Courier', 'Other',

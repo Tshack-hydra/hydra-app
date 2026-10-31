@@ -633,3 +633,15 @@ body.scrolled .navbar::before { opacity: 1; }
 .crew-status { margin: 0 4px 12px; }
 .crew-day-project .section-title { display: flex; align-items: center; }
 .crew-day-project .section-title .dot { margin-right: 8px; }
+
+/* ---- Freelancers + crew days ---- */
+.tag-line { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.center-text { text-align: center; padding: 16px; }
+.wrap-chips { flex-wrap: wrap; overflow: visible; margin: 0; padding: 0; }
+.crew-day { align-items: flex-start; }
+.crew-day-date { flex: 0 0 5.5rem; font-weight: 600; padding-top: 2px; }
+.crew-day-who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.crew-day .chev { align-self: center; }
+.sheet-tab.add { background: none; border: 1px dashed var(--label3); color: var(--label2); text-transform: none; }
+input[type=search] { width: 100%; min-height: 44px; padding: 11px 16px; border-radius: var(--radius); border: 0; background: var(--bg2); color: var(--label); font: inherit; margin-bottom: 12px; }
+.sheet-body .group .row[aria-checked] .tick-mark, .group .row .tick-mark { width: 20px; height: 20px; color: var(--tint); margin-left: auto; }

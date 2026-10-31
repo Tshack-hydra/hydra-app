@@ -75,7 +75,7 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Nothing about tabs is hard-coded; new tabs/columns must keep working.
 
 ## Project Crewing (tab of the Hydra sheet, `js/crewing.js`)
-- Tab named `Project Crewing`: grey/bold row = project (name in A, a date label per column), rows below = crew (name in A,
+- Tab named `PROJECT CREWING` (matched case-insensitively): grey/bold row = project (name in A, a date label per column), rows below = crew (name in A,
   filled or green cell under a date = booked, text = note). Blocks are separated by blank rows. `sheets.js` shows it with
   `renderCrewing` instead of the task list; `tasks.js` skips it. A "+ Project Crewing" tab button creates an empty one.
 - Date labels are free text ("14th Oct PREP", "8th & 11th Jan' 2027"); `parseDates` resolves a missing year to the first
@@ -84,6 +84,15 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Google Calendar mirror "Project Crewing": created from the app, shared with the domain (writer), id stored in the
   spreadsheet's developer metadata (`hydraCrewingCalendar`). One all-day event per person/project/day with a
   deterministic id (so concurrent syncs don't duplicate) and `hydraCrew=1`; synced whenever the view opens and the bookings changed.
+
+## Freelancers & crew days
+- `Freelancers` tab (`js/freelancers.js`): Name | Email | Phone | Specialisms (comma-separated tags; options in
+  `CONFIG.specialisms` plus any already used). Shown by the Sheets section as a manager (add / edit / delete). Created from
+  the app with Test Dummy 1–10 seed rows. Skipped by Tasks.
+- Crewing "Days" view (default): per project, a row per day column; tapping a day picks freelancers (adds a person row
+  to the block if needed and paints the cell green). "Sheet" is the raw grid, "Calendar" the month view.
+- Import (calendar icon): `inferProjects` groups events by job number (H-12345 in title/description or `hydraJob`),
+  else by identical title on ≥2 days; upcoming only; adds a block, or the missing days of a matching project.
 
 ## Testing
 - Serve with `python3 -m http.server 8080` and open `http://localhost:8080` (Google only accepts `localhost`).

@@ -12,8 +12,8 @@ const HIDDEN = 'hydra.cal.hidden';
 
 const mondayOf = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return addDays(x, -((x.getDay() + 6) % 7)); };
 const writable = c => c.accessRole === 'owner' || c.accessRole === 'writer';
-const isHolidays = c => /^holidays in /i.test(c.summaryOverride || c.summary);
-const calName = c => isHolidays(c) ? 'Holidays' : c.summaryOverride || c.summary;
+export const isHolidays = c => /^holidays in /i.test(c.summaryOverride || c.summary);
+export const calName = c => isHolidays(c) ? 'Holidays' : c.summaryOverride || c.summary;
 const calUrl = (calId, rest = '') => `${API}/calendars/${encodeURIComponent(calId)}/events${rest}`;
 
 let calendars = null;
@@ -22,7 +22,7 @@ let eventColors = null; // Google's event colour palette: colorId -> { backgroun
 // Forget the cached calendar list (a calendar was just created or added) so the next load re-reads it
 export const forgetCalendars = () => { calendars = null; };
 
-async function getCalendars() {
+export async function getCalendars() {
   if (calendars) return calendars;
   const d = await gfetch(`${API}/users/me/calendarList?maxResults=250`);
   calendars = (d.items || []).sort((a, b) => (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || isHolidays(a) - isHolidays(b) || calName(a).localeCompare(calName(b)));

@@ -13,14 +13,15 @@
 
 import { CONFIG } from '../config.js';
 import { gfetch } from './google.js';
-import { forgetCalendars } from './calendar.js';
+import { forgetCalendars, getCalendars, calName, isHolidays } from './calendar.js';
+import { loadFreelancers, tagChip, tagColour, specialismOptions, addFreelancersTab } from './freelancers.js';
 import { icon } from './icons.js';
 import { isGreen, guardedWrite } from './sheets.js';
 import { h, fill, store, field, toast, errMsg, ymd, parseYmd, addDays, dayLabel } from './util.js';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
 const CAL = 'https://www.googleapis.com/calendar/v3';
-const TAB_TITLE = 'Project Crewing';
+const TAB_TITLE = 'PROJECT CREWING';
 const CAL_NAME = 'Project Crewing';
 const META_KEY = 'hydraCrewingCalendar';
 const VIEW = 'hydra.crew.view';
@@ -281,21 +282,20 @@ const growRows = (tab, need) => {
   return need > have ? [{ appendDimension: { sheetId: tab.sheetId, dimension: 'ROWS', length: need - have + 20 } }] : [];
 };
 
-// A new, empty Project Crewing tab in the spreadsheet, formatted like the team's crew sheet
+// A new, empty PROJECT CREWING tab in the spreadsheet, set up like the team's crew sheet (wide name column, frozen)
 export async function addCrewingTab() {
   const d = await batch([{ addSheet: { properties: { title: TAB_TITLE, gridProperties: { rowCount: 200, columnCount: 12, frozenColumnCount: 1 } } } }]);
   const tab = d.replies[0].addSheet.properties;
   await batch([
     { updateDimensionProperties: { range: { sheetId: tab.sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: 1 }, properties: { pixelSize: 230 }, fields: 'pixelSize' } },
     { updateDimensionProperties: { range: { sheetId: tab.sheetId, dimension: 'COLUMNS', startIndex: 1, endIndex: 12 }, properties: { pixelSize: 140 }, fields: 'pixelSize' } },
-    headReq(tab, 0, ['Project name', 'Date']),
-    personReq(tab, 1, 'Name', 2),
   ]);
   return tab;
 }
 
 // ---------- the view ----------
 
+const fl = { loaded: false, loading: false, tab: null, list: [] }; // the Freelancers tab, read once per visit
 let month = null; // first of the month shown in Calendar view
 let selected = ymd();
 
@@ -304,13 +304,23 @@ export function renderCrewing(o) {
   const { tab, rows, tools, body } = o;
   const data = parseCrewing(rows);
   const all = bookingsOf(data.projects);
-  const view = store.get(VIEW, 'sheet') === 'calendar' ? 'calendar' : 'sheet';
+  const stored = store.get(VIEW, 'days');
+  const view = ['sheet', 'calendar'].includes(stored) ? stored : 'days';
   const setView = v => { store.set(VIEW, v); o.redraw(); };
   const colours = new Map(data.projects.map((p, i) => [p.name, PALETTE[i % PALETTE.length]]));
 
   fill(tools, h('div', { class: 'seg', role: 'group', 'aria-label': 'Crewing view' },
-    h('button', { class: view === 'sheet' ? 'on' : '', 'aria-pressed': String(view === 'sheet'), onclick: () => setView('sheet') }, 'Sheet'),
-    h('button', { class: view === 'calendar' ? 'on' : '', 'aria-pressed': String(view === 'calendar'), onclick: () => setView('calendar') }, 'Calendar')));
+    [['days', 'Days'], ['sheet', 'Sheet'], ['calendar', 'Calendar']].map(([v, label]) =>
+      h('button', { class: view === v ? 'on' : '', 'aria-pressed': String(view === v), onclick: () => setView(v) }, label))));
+  o.ctx.actions(o.sheetLink,
+    h('button', { class: 'nav-icon', 'aria-label': 'Freelancers', onclick: () => openFreelancers(o) }, icon('people')),
+    h('button', { class: 'nav-icon', 'aria-label': 'Import project days from calendar', onclick: () => importFromCalendar(o, data) }, icon('calendar')));
+
+  if (!fl.loaded && !fl.loading) {
+    fl.loading = true;
+    loadFreelancers(o.tabs).then(r => { fl.tab = r.tab; fl.list = r.list; }, () => {})
+      .finally(() => { fl.loaded = true; fl.loading = false; if (o.ctx.alive) o.redraw(); });
+  }
 
   if (!calState.checked && !calState.loading) {
     calState.loading = true;
@@ -320,8 +330,8 @@ export function renderCrewing(o) {
 
   fill(body,
     calBar(o),
-    view === 'sheet' ? sheetView(o, data) : calendarView(all, data, colours),
-    view === 'sheet' ? h('button', { class: 'btn block', onclick: () => newProject(o, data) }, icon('plus'), 'New project') : null);
+    view === 'days' ? daysView(o, data) : view === 'sheet' ? sheetView(o, data) : calendarView(all, data, colours),
+    view !== 'calendar' ? h('button', { class: 'btn block', onclick: () => newProject(o, data) }, icon('plus'), 'New project') : null);
   syncCalendar(all);
 }
 
@@ -366,7 +376,7 @@ function sheetView(o, data) {
         })))))) : h('p', { class: 'card muted' }, 'No dates yet. Add a date to start booking people.'),
     h('div', { class: 'actions' },
       h('button', { class: 'btn small', onclick: () => addPerson(o, p) }, icon('plus'), 'Person'),
-      h('button', { class: 'btn small', onclick: () => addDate(o, p) }, icon('plus'), 'Date'))));
+      h('button', { class: 'btn small', onclick: () => addDay(o, p) }, icon('plus'), 'Date'))));
 }
 
 // ----- Calendar view: month grid in each project's colour, tap a day to see who is booked -----
@@ -491,22 +501,36 @@ function editPerson(o, p, person) {
   } }, 'Remove from project'))));
 }
 
-function addDate(o, p) {
-  const label = h('input', { type: 'text', required: true, placeholder: 'e.g. 14th Nov, or 8th & 11th Jan 2027' });
-  const btn = saveBtn('Add date');
-  const m = o.dialog(`Add date · ${p.name}`, h('form', { class: 'form', onsubmit: e => {
+const ORD = n => n + ([11, 12, 13].includes(n % 100) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const floorDate = () => { const t = new Date(); return addDays(new Date(t.getFullYear(), t.getMonth(), t.getDate()), -120); };
+// "14th Oct", with the year added only when the sheet's reading rules would otherwise get the year wrong
+const labelFor = (d, after) => {
+  const base = `${ORD(d.getDate())} ${MON[d.getMonth()]}`;
+  const back = parseDates(base, after)[0];
+  return back && ymd(back) === ymd(d) ? base : `${base} ${d.getFullYear()}`;
+};
+const lastDateOf = p => p.cols.flatMap(c => c.dates).pop() || floorDate();
+const norm = s => s.trim().toLowerCase();
+
+function addDay(o, p) {
+  const last = p.cols.flatMap(c => c.dates).pop();
+  const date = h('input', { type: 'date', required: true, value: last ? ymd(addDays(last, 1)) : ymd() });
+  const suffix = h('input', { type: 'text', placeholder: 'e.g. PREP, Live (optional)' });
+  const btn = saveBtn('Add day');
+  const m = o.dialog(`Add day · ${p.name}`, h('form', { class: 'form', onsubmit: e => {
     e.preventDefault();
-    if (!label.value.trim()) return;
+    if (!date.value) return;
     btn.disabled = true;
     m.close();
+    const label = [labelFor(parseYmd(date.value), lastDateOf(p)), suffix.value.trim()].filter(Boolean).join(' ');
     const col = Math.max(0, ...p.cols.map(c => c.col)) + 1;
     const cols = o.tab.gridProperties?.columnCount || 26;
     write(o, p.row, col, cellText(o.rows, p.row, col), () => batch([
       ...(col + 1 > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: col + 1 - cols + 2 } }] : []),
-      { updateCells: { range: rng(o.tab, p.row, col), rows: [{ values: [{ userEnteredValue: val(label.value.trim()), userEnteredFormat: fmt(GREY, true, 'CENTER') }] }], fields: FMT_FIELDS } },
+      { updateCells: { range: rng(o.tab, p.row, col), rows: [{ values: [{ userEnteredValue: val(label), userEnteredFormat: fmt(GREY, true, 'CENTER') }] }], fields: FMT_FIELDS } },
     ]));
-  } }, field('Date', label), h('small', { class: 'hint' }, 'Type the day and month so it shows in the calendar: “30th Nov”, “24th-26th Oct”.'), btn));
-  setTimeout(() => label.focus(), 50);
+  } }, field('Date', date), field('Label', suffix), btn));
 }
 
 function editDate(o, p, c) {
@@ -550,3 +574,221 @@ function newProject(o, data) {
   } }, field('Project', name), field('First date (optional)', date), field('First person (optional)', who), btn));
   setTimeout(() => name.focus(), 50);
 }
+
+// ----- Days view: one section per project, one row per day, tap a day to pick who is booked -----
+function daysView(o, data) {
+  const cards = [];
+  if (fl.loaded && !fl.tab) {
+    cards.push(h('section', { class: 'card' },
+      h('h3', {}, 'Set up your freelancer list'),
+      h('p', { class: 'muted' }, 'Add a Freelancers tab to the spreadsheet (name, email, phone and specialisms) to pick who is booked from a list. It starts with Test Dummy 1–10 to try out.'),
+      h('button', { class: 'btn primary', onclick: async e => {
+        e.target.disabled = true;
+        try { const t = await addFreelancersTab(); fl.loaded = false; await o.switchTo(t); } catch (err) { toast(errMsg(err), 'error'); e.target.disabled = false; }
+      } }, 'Create Freelancers tab')));
+  }
+  if (!data.projects.length) {
+    cards.push(h('section', { class: 'card center' }, h('p', { class: 'muted' }, 'No projects yet. Import project days from your calendar (top right), or add a project below.')));
+    return cards;
+  }
+  const tagOf = name => fl.list.find(f => norm(f.name) === norm(name))?.tags[0];
+  const who = name => h('span', { class: 'initials tag-' + (tagOf(name) ? tagColour(tagOf(name)) : 'gray') }, name);
+  for (const p of data.projects) {
+    cards.push(h('section', { class: 'crew-project' },
+      h('h3', {}, p.name, h('span', { class: 'count' }, `${p.cols.length} day${p.cols.length === 1 ? '' : 's'}`)),
+      p.cols.length ? h('div', { class: 'group' }, p.cols.map(c => {
+        const crew = p.people.filter(x => x.cells.has(c.col));
+        return h('button', { class: 'row crew-day', onclick: () => pickCrew(o, p, c) },
+          h('span', { class: 'crew-day-date' }, c.label),
+          h('span', { class: 'crew-day-who' }, crew.length ? crew.map(x => who(x.name)) : h('span', { class: 'muted' }, 'Nobody booked')),
+          icon('chevron-right', 'chev'));
+      })) : h('p', { class: 'card muted' }, 'No days yet. Add a day to start booking people.'),
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn small', onclick: () => addDay(o, p) }, icon('plus'), 'Add day'),
+        h('button', { class: 'btn small', onclick: () => editProject(o, p) }, 'Edit project'))));
+  }
+  return cards;
+}
+
+function openFreelancers(o) {
+  if (fl.tab) o.switchTo(fl.tab);
+  else toast('Create the Freelancers tab first (see the card in Days view)', 'error');
+}
+
+// Who is booked on this day: tick freelancers from the list (people already in the sheet but not in the list are shown too)
+async function pickCrew(o, p, c) {
+  try { const r = await loadFreelancers(o.tabs); fl.tab = r.tab; fl.list = r.list; } catch { /* use what we have */ }
+  const booked = new Set(p.people.filter(x => x.cells.has(c.col)).map(x => norm(x.name)));
+  const sel = new Set(booked);
+  const names = new Map(); // norm → display name
+  for (const f of fl.list) names.set(norm(f.name), f);
+  for (const x of p.people) if (!names.has(norm(x.name))) names.set(norm(x.name), { name: x.name, tags: [], legacy: true });
+  let q = '', tag = '';
+  const search = h('input', { type: 'search', placeholder: 'Search name or specialism', 'aria-label': 'Search',
+    oninput: e => { q = e.target.value.trim().toLowerCase(); draw(); }, onkeydown: e => { if (e.key === 'Enter') e.preventDefault(); } });
+  const tagsEl = h('div', { class: 'chips' });
+  const listEl = h('div', {});
+  const form = h('form', { class: 'form' }, search, tagsEl, listEl);
+  const btn = saveBtn('Save');
+  form.append(btn, h('div', { class: 'actions' }, h('button', { class: 'btn', type: 'button', onclick: () => { m.close(); editDate(o, p, c); } }, 'Edit or remove this day')));
+  function draw() {
+    const all = [...names.values()];
+    fill(tagsEl, specialismOptions(fl.list).map(t => h('button', { type: 'button', class: 'chip' + (tag === t ? '' : ' off'), 'aria-pressed': String(tag === t), onclick: () => { tag = tag === t ? '' : t; draw(); } }, t)));
+    const shown = all.filter(f => (!tag || f.tags.includes(tag)) && (!q || [f.name, ...f.tags].some(x => x.toLowerCase().includes(q))));
+    fill(listEl, shown.length ? h('div', { class: 'group' }, shown.map(f => h('button', {
+      type: 'button', class: 'row', role: 'checkbox', 'aria-checked': String(sel.has(norm(f.name))),
+      onclick: () => { const k = norm(f.name); if (sel.has(k)) sel.delete(k); else sel.add(k); form.dispatchEvent(new Event('input')); draw(); },
+    }, h('span', { class: 'row-main' }, h('b', {}, f.name), f.tags.length ? h('span', { class: 'tag-line' }, f.tags.map(tagChip)) : f.legacy ? h('small', {}, 'Not in the freelancer list') : null),
+    sel.has(norm(f.name)) ? icon('check', 'tick-mark') : null)))
+      : h('p', { class: 'muted center-text' }, fl.list.length ? 'Nobody matches.' : 'The freelancer list is empty.'));
+  }
+  const m = o.dialog(`${p.name} · ${c.label}`, form);
+  form.addEventListener('submit', e => {
+    e.preventDefault();
+    const mark = (row, on) => ({ updateCells: { range: rng(o.tab, row, c.col), rows: [{ values: [{ userEnteredValue: {}, userEnteredFormat: fmt(on ? GREEN : WHITE, false, 'CENTER') }] }], fields: FMT_FIELDS } });
+    const reqs = [];
+    for (const x of p.people) {
+      const k = norm(x.name), has = x.cells.has(c.col);
+      if (sel.has(k) && !has) reqs.push(mark(x.row, true));
+      if (!sel.has(k) && has) reqs.push(mark(x.row, false));
+    }
+    const add = [...sel].filter(k => !p.people.some(x => norm(x.name) === k));
+    if (!reqs.length && !add.length) { m.close(); return; }
+    btn.disabled = true;
+    m.close();
+    const width = Math.max(2, ...p.cols.map(x => x.col + 1));
+    let at = p.lastRow + 1;
+    if (add.length) reqs.unshift(...growRows(o.tab, at + add.length));
+    for (const k of add) {
+      reqs.push({ insertDimension: { range: { sheetId: o.tab.sheetId, dimension: 'ROWS', startIndex: at, endIndex: at + 1 }, inheritFromBefore: true } },
+        personReq(o.tab, at, names.get(k).name, width), mark(at, true));
+      at++;
+    }
+    write(o, p.lastRow, 0, cellText(o.rows, p.lastRow, 0), () => batch(reqs));
+  });
+  draw();
+}
+
+function editProject(o, p) {
+  const name = h('input', { type: 'text', required: true, value: p.name });
+  const btn = saveBtn('Save');
+  const m = o.dialog('Edit project', h('form', { class: 'form', onsubmit: e => {
+    e.preventDefault();
+    if (!name.value.trim()) return;
+    btn.disabled = true;
+    m.close();
+    write(o, p.row, 0, p.name, () => batch([{ updateCells: { range: rng(o.tab, p.row, 0), rows: [{ values: [{ userEnteredValue: val(name.value.trim()) }] }], fields: 'userEnteredValue' } }]));
+  } }, field('Project name', name), btn,
+  h('div', { class: 'actions' }, h('button', { class: 'btn danger', type: 'button', onclick: () => {
+    if (!confirm(`Delete ${p.name} and all its bookings from the sheet?`)) return;
+    m.close();
+    write(o, p.row, 0, p.name, () => batch([{ deleteDimension: { range: { sheetId: o.tab.sheetId, dimension: 'ROWS', startIndex: p.row, endIndex: p.lastRow + 1 } } }]));
+  } }, 'Delete project'))));
+}
+
+// ----- Import: projects and their days inferred from the Google calendars -----
+// Events carrying a job number (H-01886, or the job picked on the event) are grouped by job. Other events are
+// grouped by identical title, and only when that title is on two or more days. Past projects are left out.
+const JOB = /\bH-\d{3,6}\b/i;
+function eventDays(e) {
+  const out = [];
+  if (e.start.date) for (let d = parseYmd(e.start.date), end = parseYmd(e.end.date); d < end; d = addDays(d, 1)) out.push(ymd(d));
+  else {
+    const s = new Date(e.start.dateTime), en = new Date(e.end.dateTime);
+    for (let d = new Date(s.getFullYear(), s.getMonth(), s.getDate()); d <= en && ymd(d) <= ymd(en); d = addDays(d, 1)) out.push(ymd(d));
+  }
+  return out;
+}
+
+export function inferProjects(events) {
+  const groups = new Map();
+  for (const e of events) {
+    const priv = e.extendedProperties?.private || {};
+    const job = (priv.hydraJob || `${e.summary || ''} ${e.description || ''}`.match(JOB)?.[0] || '').toUpperCase();
+    const title = (priv.hydraJobTitle || (e.summary || '').replace(JOB, '').replace(/^[\s:–—-]+|[\s:–—-]+$/g, '')).trim();
+    if (!job && !title) continue;
+    const key = job || 'T:' + norm(title);
+    const g = groups.get(key) || groups.set(key, { job, names: new Map(), days: new Set(), cals: new Set(), events: 0 }).get(key);
+    g.names.set(title, (g.names.get(title) || 0) + (priv.hydraJobTitle ? 100 : 1));
+    for (const d of eventDays(e)) g.days.add(d);
+    g.cals.add(calName(e._cal));
+    g.events++;
+  }
+  return [...groups.values()]
+    .map(g => ({ job: g.job, name: [...g.names].sort((a, b) => b[1] - a[1])[0]?.[0] || g.job, days: [...g.days].sort(), cals: [...g.cals], tagged: !!g.job }))
+    .filter(g => g.days.length && g.days[g.days.length - 1] >= ymd() && (g.tagged || g.days.length >= 2))
+    .sort((a, b) => a.days[0].localeCompare(b.days[0]));
+}
+
+async function importFromCalendar(o, data) {
+  const box = h('div', {}, h('div', { class: 'loading' }, 'Reading your calendars…'));
+  const m = o.dialog('Import from calendar', box);
+  try {
+    const hidden = store.get('hydra.cal.hidden', []);
+    const cals = (await getCalendars()).filter(c => c.id !== calState.id && !isHolidays(c) && !hidden.includes(c.id));
+    const from = addDays(new Date(), -1), to = addDays(new Date(), 400);
+    const qs = `?singleEvents=true&orderBy=startTime&maxResults=250&timeMin=${encodeURIComponent(from.toISOString())}&timeMax=${encodeURIComponent(to.toISOString())}`;
+    const events = (await Promise.all(cals.map(c => gfetch(calUrl(c.id, qs))
+      .then(d => (d.items || []).filter(e => e.status !== 'cancelled').map(e => ({ ...e, _cal: c }))).catch(() => [])))).flat();
+    const cands = inferProjects(events).map(g => {
+      const have = data.projects.find(p => norm(p.name) === norm(g.name) || (norm(g.name).length > 3 && norm(p.name).length > 3 && (norm(g.name).includes(norm(p.name)) || norm(p.name).includes(norm(g.name)))));
+      const known = new Set(have ? have.cols.flatMap(c => c.dates.map(d => ymd(d))) : []);
+      return { ...g, have, fresh: g.days.filter(d => !known.has(d)) };
+    });
+    const sel = new Set(cands.filter(c => c.tagged && c.fresh.length).map(c => c));
+    if (!cands.length) { fill(box, h('p', { class: 'muted' }, 'No upcoming project days found. Tag calendar events with a job (the Job field when you create an event) and they will show up here.')); return; }
+    const btn = saveBtn('Import');
+    const form = h('form', { class: 'form' });
+    const draw = () => fill(form,
+      h('p', { class: 'muted' }, 'Projects found on your calendars. Ticked ones are added to PROJECT CREWING with a day for each date.'),
+      h('div', { class: 'group' }, cands.map(c => h('button', {
+        type: 'button', class: 'row', role: 'checkbox', disabled: !c.fresh.length, 'aria-checked': String(sel.has(c)),
+        onclick: () => { if (sel.has(c)) sel.delete(c); else sel.add(c); form.dispatchEvent(new Event('input')); draw(); },
+      }, h('span', { class: 'row-main' }, h('b', {}, c.name),
+        h('small', {}, `${c.days.length} day${c.days.length === 1 ? '' : 's'} · ${shortRange(c.days)} · ${c.cals.join(', ')}`)),
+      h('span', { class: 'tag' + (c.fresh.length ? '' : ' tint') }, !c.fresh.length ? 'Up to date' : c.have ? `+${c.fresh.length} day${c.fresh.length === 1 ? '' : 's'}` : 'New'),
+      sel.has(c) ? icon('check', 'tick-mark') : null))),
+      btn);
+    draw();
+    fill(box, form);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const chosen = cands.filter(c => sel.has(c) && c.fresh.length);
+      if (!chosen.length) { m.close(); return; }
+      btn.disabled = true;
+      m.close();
+      const reqs = [];
+      let at = data.lastRow < 0 ? 0 : data.lastRow + 3;
+      let needCols = 0;
+      const labels = (days, after) => days.map(d => { const date = parseYmd(d); const l = labelFor(date, after); after = date; return l; });
+      for (const c of chosen) {
+        if (c.have) {
+          const col0 = Math.max(0, ...c.have.cols.map(x => x.col)) + 1;
+          const ls = labels(c.fresh, lastDateOf(c.have));
+          needCols = Math.max(needCols, col0 + ls.length);
+          ls.forEach((l, i) => reqs.push({ updateCells: { range: rng(o.tab, c.have.row, col0 + i), rows: [{ values: [{ userEnteredValue: val(l), userEnteredFormat: fmt(GREY, true, 'CENTER') }] }], fields: FMT_FIELDS } }));
+        } else {
+          const ls = labels(c.days, floorDate());
+          needCols = Math.max(needCols, ls.length + 1);
+          reqs.push(headReq(o.tab, at, [c.name, ...ls]));
+          at += 3; // header, then two blank rows before the next project
+        }
+      }
+      const cols = o.tab.gridProperties?.columnCount || 26;
+      const work = () => batch([
+        ...growRows(o.tab, at + 1),
+        ...(needCols > cols ? [{ appendDimension: { sheetId: o.tab.sheetId, dimension: 'COLUMNS', length: needCols - cols + 2 } }] : []),
+        ...reqs,
+      ]);
+      if (data.lastRow < 0) work().then(() => o.refresh(), err => toast(errMsg(err), 'error'));
+      else write(o, data.lastRow, 0, cellText(o.rows, data.lastRow, 0), work);
+    });
+  } catch (err) {
+    fill(box, h('p', { class: 'error' }, errMsg(err)));
+  }
+}
+
+const shortRange = days => {
+  const f = d => parseYmd(d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return days.length > 1 ? `${f(days[0])} – ${f(days[days.length - 1])}` : f(days[0]);
+};
