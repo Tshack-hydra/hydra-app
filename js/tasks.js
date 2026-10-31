@@ -11,7 +11,7 @@ import { icon } from './icons.js';
 import { h, fill, store, modal, field, toast, errMsg, spinner, isModalOpen, hm } from './util.js';
 import { isCrewingTab } from './crewing.js';
 import { isFreelancersTab } from './freelancers.js';
-import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, initialsTag, whoPicker, whoOptions, guardedWrite, setDone, insertTask } from './sheets.js';
+import { fetchTabs, fetchAllGrids, isListTab, parseList, whoList, initialsTag, whoPicker, whoOptions, tickTask, insertTask } from './sheets.js';
 
 export function renderTasks(root, ctx) {
   if (!CONFIG.spreadsheetId) {
@@ -117,7 +117,7 @@ export function renderTasks(root, ctx) {
     const done = !t.done;
     t.done = done;
     render();
-    await guardedWrite(l.tab, t.row, 0, t.text, () => setDone(l.tab, t, l.used, done));
+    await tickTask(l.tab, l.used, t, done);
     await refresh(true);
   }
 

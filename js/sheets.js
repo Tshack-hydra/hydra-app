@@ -197,6 +197,56 @@ export async function guardedWrite(tab, r, c, expected, work) {
   }
 }
 
+// Ticking is a check-then-write, so a row inserted or deleted above in between would put the tick on a
+// neighbour. After writing, read the sheet back: if the row isn't where we meant, undo the stray tick and
+// tick the row where it has moved to. Works on the first columns of the tab as plain text.
+async function columnsNow(tab, lastCol) {
+  const d = await gfetch(`${API}${sid()}/values/${encodeURIComponent(`${quote(tab.title)}!A:${colLetter(lastCol)}`)}`);
+  return (d.values || []).map(r => r.map(v => String(v ?? '').trim()));
+}
+const nearest = (grid, text, from) => grid.reduce((best, r, i) => r[0] === text && (best < 0 || Math.abs(i - from) < Math.abs(best - from)) ? i : best, -1);
+
+const clearBox = (tab, row, col) => [
+  { setDataValidation: { range: cellRange(tab, row, col) } },
+  { updateCells: { range: cellRange(tab, row, col), rows: [{ values: [{ userEnteredValue: {} }] }], fields: 'userEnteredValue' } },
+];
+
+const boxState = v => v ? v.toUpperCase() === 'TRUE' : null; // tick box value → true / false / none (heading)
+
+export async function tickTask(tab, used, t, done) {
+  if (t.doneCol < 0) return guardedWrite(tab, t.row, 0, t.text, () => setDone(tab, t, used, done));
+  const text = (t.text || '').trim(), dc = t.doneCol;
+  try {
+    const original = await columnsNow(tab, dc);
+    if ((original[t.row]?.[0] || '') !== text) {
+      toast('Someone just changed this sheet — refreshed, please try again', 'error');
+      return false;
+    }
+    let todo = [{ text, row: t.row, want: done }];
+    for (let round = 0; round < 5 && todo.length; round++) {
+      for (const w of todo) await batch(w.want === null ? clearBox(tab, w.row, dc) : tickReqs(tab, w.row, dc, w.want).concat(w.want ? [] : [paintRow(tab, w.row, used, WHITE)]));
+      const now = await columnsNow(tab, dc);
+      const next = [];
+      for (const w of todo) {
+        if ((now[w.row]?.[0] || '') === w.text) continue; // landed on the row we meant
+        // A row was inserted or deleted after the check: that write hit a neighbour. Put the neighbour back
+        // how it was, and redo this one where its row has moved to. Both are checked again next round.
+        const other = now[w.row]?.[0] || '';
+        const was = boxState(original[nearest(original, other, w.row)]?.[dc]);
+        if (boxState(now[w.row]?.[dc]) !== was) next.push({ text: other, row: w.row, want: was });
+        const moved = nearest(now, w.text, w.row);
+        if (moved >= 0) next.push({ text: w.text, row: moved, want: w.want });
+      }
+      todo = next;
+    }
+    if (todo.length) { toast('Someone changed the sheet while saving — please check the tick', 'error'); return false; }
+    return true;
+  } catch (e) {
+    toast(errMsg(e), 'error');
+    return false;
+  }
+}
+
 // Mark a task done or not. With a Done column: set the tick box (the sheet paints the row green itself)
 // and, when un-ticking, clear any green painted by hand. Without one: paint the row green or white.
 const cellRange = (tab, r, c) => ({ sheetId: tab.sheetId, startRowIndex: r, endRowIndex: r + 1, startColumnIndex: c, endColumnIndex: c + 1 });
@@ -404,7 +454,7 @@ export function renderSheets(root, ctx) {
     const done = !t.done;
     showDoneLocally(rows, t, done);
     render();
-    return guarded(t.row, 0, t.text, () => setDone(active, t, used, done));
+    return tickTask(active, used, t, done).then(() => refresh(true));
   }
 
   function taskForm({ text = '', who = '', submit, extraButtons = [] }) {

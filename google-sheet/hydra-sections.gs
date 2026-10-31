@@ -6,7 +6,7 @@
 //   • New section: type the name in Task and choose "New section" in Who
 //     (or make the name bold with Who empty). The row becomes a clean bold heading.
 //   • Section by mistake: type initials in its Who box. It becomes a normal task again.
-//   • Cleared rows (text deleted) get their Who emptied and their drop-down and Done box back, unticked.
+//   • Cleared rows (Task text deleted) get their Who emptied and their drop-down and Done box back, unticked.
 //   • Every task row is 28px tall so the initials chips have room.
 //   • The Who column is only as wide as the most initials in any one row.
 //   • Each section heading has a totally blank row above it (no Who drop-down, no Done box), except the
@@ -22,7 +22,8 @@ function onEdit(e) {
   const cols = columns_(sheet);
   if (!cols) return;
   allOrPeople_(cols, e);
-  tidy_(sheet, cols);
+  // Who is only emptied when the Task text itself was just edited, so picking initials first still works
+  tidy_(sheet, cols, e.range.getColumn() <= 1 ? { first: e.range.getRow(), last: e.range.getLastRow() } : null);
 }
 
 const initials_ = v => String(v || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -56,7 +57,7 @@ function columns_(sheet) {
   return cols;
 }
 
-function tidy_(sheet, cols) {
+function tidy_(sheet, cols, taskEdit) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return;
   const n = lastRow - 1;
@@ -80,7 +81,7 @@ function tidy_(sheet, cols) {
       // spacers_ keeps or removes those
       if (!rules[i].some(Boolean) && !row.some(v => String(v).trim())) return;
       // Text cleared: make it a normal empty row again, and empty its Who
-      if (who) { sheet.getRange(r, cols.who).clearContent(); row[cols.who - 1] = ''; }
+      if (who && taskEdit && r >= taskEdit.first && r <= taskEdit.last) { sheet.getRange(r, cols.who).clearContent(); row[cols.who - 1] = ''; }
       if (blank(i) && model >= 0 && model !== i && (!hasSetup(i) || doneVal === 'TRUE' || bold)) makeTask_(sheet, r, cols, model + 2, '');
       return;
     }
