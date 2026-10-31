@@ -171,26 +171,46 @@ async function metaCalendarId() {
   const d = await gfetch(`${API}${sid()}/developerMetadata:search`, { method: 'POST', body: { dataFilters: [{ developerMetadataLookup: { metadataKey: META_KEY, locationType: 'SPREADSHEET' } }] } });
   return d?.matchedDeveloperMetadata?.[0]?.developerMetadata?.metadataValue || null;
 }
-const saveCalendarId = id => batch([{ createDeveloperMetadata: { developerMetadata: { metadataKey: META_KEY, metadataValue: id, location: { spreadsheet: true }, visibility: 'DOCUMENT' } } }]);
 
 // Make sure the Project Crewing calendar is in this person's calendar list (it's shared with the whole domain)
 async function subscribe(id) {
   try { await gfetch(`${CAL}/users/me/calendarList`, { method: 'POST', body: { id } }); forgetCalendars(); } catch { /* already in the list */ }
 }
 
+// Is this calendar still there, and can this person write to it?
+async function usable(id) {
+  try { const c = await gfetch(`${CAL}/users/me/calendarList/${encodeURIComponent(id)}`); return ['owner', 'writer'].includes(c.accessRole); }
+  catch { return false; }
+}
+
+const saveCalendarId = async (id, replace) => {
+  if (replace) {
+    try {
+      await batch([{ updateDeveloperMetadata: { dataFilters: [{ developerMetadataLookup: { metadataKey: META_KEY, locationType: 'SPREADSHEET' } }], developerMetadata: { metadataValue: id }, fields: 'metadataValue' } }]);
+      return;
+    } catch { /* fall through and create it */ }
+  }
+  await batch([{ createDeveloperMetadata: { developerMetadata: { metadataKey: META_KEY, metadataValue: id, location: { spreadsheet: true }, visibility: 'DOCUMENT' } } }]);
+};
+
+// The calendar saved in the spreadsheet if it still works, else a calendar already called "Project Crewing"
+// that this person can write to (adopted and saved), else null
 async function findCalendar() {
-  const id = await metaCalendarId();
-  if (id) { await subscribe(id); return id; }
-  // Someone may already have made one by hand: use it rather than creating a second
-  const list = await gfetch(`${CAL}/users/me/calendarList?minAccessRole=owner&maxResults=250`);
-  const mine = (list.items || []).find(c => (c.summaryOverride || c.summary) === CAL_NAME);
-  if (mine) { await saveCalendarId(mine.id); return mine.id; }
+  const saved = await metaCalendarId();
+  if (saved) {
+    await subscribe(saved);
+    if (await usable(saved)) return saved;
+  }
+  const list = await gfetch(`${CAL}/users/me/calendarList?minAccessRole=writer&maxResults=250`);
+  const same = (list.items || []).filter(c => (c.summaryOverride || c.summary || '').trim().toLowerCase() === CAL_NAME.toLowerCase());
+  const mine = same.find(c => c.accessRole === 'owner') || same[0];
+  if (mine) { await saveCalendarId(mine.id, !!saved); return mine.id; }
   return null;
 }
 
 async function createCalendar() {
-  const existing = await metaCalendarId(); // someone else may have just made it
-  if (existing) { await subscribe(existing); return { id: existing, shared: true }; }
+  const existing = await findCalendar(); // someone else may have just made it, or one is already there
+  if (existing) return { id: existing, shared: true };
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const cal = await gfetch(`${CAL}/calendars`, { method: 'POST', body: { summary: CAL_NAME, description: 'Who is booked on which project and when. Kept up to date from the Project Crewing tab of the Hydra spreadsheet.', timeZone: tz } });
   // Everyone in the studio can see it and the app can keep it up to date from any phone
@@ -198,7 +218,7 @@ async function createCalendar() {
   if (CONFIG.workspaceDomain) {
     try { await gfetch(`${CAL}/calendars/${encodeURIComponent(cal.id)}/acl?sendNotifications=false`, { method: 'POST', body: { role: 'writer', scope: { type: 'domain', value: CONFIG.workspaceDomain } } }); } catch { shared = false; }
   }
-  await saveCalendarId(cal.id);
+  await saveCalendarId(cal.id, !!(await metaCalendarId()));
   forgetCalendars();
   return { id: cal.id, shared };
 }
@@ -224,7 +244,10 @@ async function pushEvents(calId, bookings) {
     if (!ex) {
       jobs.push(() => gfetch(calUrl(calId), { method: 'POST', body: { id, ...body } })
         // a removed booking leaves a cancelled event behind under the same id: bring it back
-        .catch(() => gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body: { ...body, status: 'confirmed' } })));
+        .catch(err => {
+          if (!/already exists|identifier|duplicate|conflict/i.test(errMsg(err))) throw err;
+          return gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body: { ...body, status: 'confirmed' } });
+        }));
     } else if (ex.summary !== body.summary || (ex.description || '') !== body.description || ex.start?.date !== body.start.date) {
       jobs.push(() => gfetch(calUrl(calId, '/' + id), { method: 'PATCH', body }));
     }
@@ -251,7 +274,8 @@ async function syncCalendar(bookings) {
     calState.syncedSig = sig;
     setStatus(`Google Calendar is up to date · ${bookings.length} booking${bookings.length === 1 ? '' : 's'}`);
   } catch (e) {
-    setStatus('Couldn’t update Google Calendar: ' + errMsg(e));
+    if (/not found/i.test(errMsg(e)) && !calState.refound) { calState.refound = true; calState.id = null; calState.checked = false; calState.msg = ''; } // calendar gone: look again, once
+    else setStatus('Couldn’t update Google Calendar: ' + errMsg(e));
   } finally {
     calState.syncing = false;
   }
@@ -332,7 +356,7 @@ export function renderCrewing(o) {
     calBar(o),
     view === 'days' ? daysView(o, data) : view === 'sheet' ? sheetView(o, data) : calendarView(all, data, colours),
     view !== 'calendar' ? h('button', { class: 'btn block', onclick: () => newProject(o, data) }, icon('plus'), 'New project') : null);
-  syncCalendar(all);
+  syncCalendar(all).then(() => { if (!calState.checked && o.ctx.alive) o.redraw(); });
 }
 
 function calBar(o) {

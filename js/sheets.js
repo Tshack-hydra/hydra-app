@@ -161,6 +161,18 @@ export async function fetchAllGrids(tabs) {
 // Tabs that look like a to-do list (a Task header, or ≤ 3 columns) — the Tasks section gathers these
 export const isListTab = (tab, rows) => tableShape(rows || []).header >= 0 || usedCols(rows || []) <= 3;
 
+// Tab names are always CAPITALS: rename any that aren't (once per tab per visit)
+const renamed = new Set();
+async function upperCaseTabs(tabs) {
+  const todo = tabs.filter(t => t.title !== t.title.toUpperCase() && !renamed.has(t.sheetId));
+  if (!todo.length) return;
+  todo.forEach(t => renamed.add(t.sheetId));
+  try {
+    await batch(todo.map(t => ({ updateSheetProperties: { properties: { sheetId: t.sheetId, title: t.title.toUpperCase() }, fields: 'title' } })));
+    todo.forEach(t => { t.title = t.title.toUpperCase(); });
+  } catch { /* shown in capitals anyway; try again next visit */ }
+}
+
 const batch = requests => gfetch(`${API}${sid()}:batchUpdate`, { method: 'POST', body: { requests } });
 const textCell = s => ({ userEnteredValue: { stringValue: s }, userEnteredFormat: { backgroundColor: WHITE, textFormat: { bold: false } } });
 
@@ -284,6 +296,7 @@ export function renderSheets(root, ctx) {
     busy = true;
     try {
       tabs = await fetchTabs();
+      await upperCaseTabs(tabs);
       const want = active?.sheetId ?? store.get('hydra.sheets.active');
       active = tabs.find(t => t.sheetId === want) || tabs[0] || null;
       renderTabs();
@@ -321,9 +334,9 @@ export function renderSheets(root, ctx) {
     fill(tabsEl, tabs.map(t => h('button', {
       class: 'sheet-tab' + (t === active ? ' active' : ''), role: 'tab',
       onclick: () => { if (t === active) return; active = t; rows = null; lastSig = ''; store.set('hydra.sheets.active', t.sheetId); renderTabs(); body.replaceChildren(spinner()); tools.replaceChildren(); refresh(true); },
-    }, isCrewingTab(t) ? t.title.toUpperCase() : t.title)),
+    }, t.title.toUpperCase())),
     // Tabs the app builds its own screens for: offer to make them when missing
-    [[isCrewingTab, addCrewingTab, '+ PROJECT CREWING'], [isFreelancersTab, addFreelancersTab, '+ Freelancers']]
+    [[isCrewingTab, addCrewingTab, '+ PROJECT CREWING'], [isFreelancersTab, addFreelancersTab, '+ FREELANCERS']]
       .filter(([is]) => !tabs.some(is))
       .map(([, make, label]) => h('button', { class: 'sheet-tab add', onclick: async e => {
         e.target.disabled = true;

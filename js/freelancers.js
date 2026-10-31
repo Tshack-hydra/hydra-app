@@ -10,7 +10,7 @@ import { guardedWrite, fetchAllGrids } from './sheets.js';
 import { h, fill, field, toast, errMsg } from './util.js';
 
 const API = 'https://sheets.googleapis.com/v4/spreadsheets/';
-const TAB_TITLE = 'Freelancers';
+const TAB_TITLE = 'FREELANCERS';
 const COLOURS = ['blue', 'green', 'orange', 'purple', 'teal', 'red', 'yellow'];
 
 const sid = () => CONFIG.spreadsheetId;

@@ -350,7 +350,7 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 /* ---- sheets: Reminders-style task list ---- */
 .sheet-tabs { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px 12px; padding: 0 16px; scrollbar-width: none; }
 .sheet-tabs::-webkit-scrollbar { display: none; }
-.sheet-tab { white-space: nowrap; min-height: 34px; border: 0; background: var(--fill); border-radius: 999px; padding: 0 14px; font-size: 0.882rem; font-weight: 600; text-transform: capitalize; }
+.sheet-tab { white-space: nowrap; min-height: 34px; border: 0; background: var(--fill); border-radius: 999px; padding: 0 14px; font-size: 0.882rem; font-weight: 600; text-transform: uppercase; }
 .sheet-tab.active { background: var(--tint); color: var(--on-tint); }
 .sync { text-align: center; margin-top: 4px; }
 .task-section { margin-bottom: 22px; }
@@ -642,6 +642,6 @@ body.scrolled .navbar::before { opacity: 1; }
 .crew-day-date { flex: 0 0 5.5rem; font-weight: 600; padding-top: 2px; }
 .crew-day-who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .crew-day .chev { align-self: center; }
-.sheet-tab.add { background: none; border: 1px dashed var(--label3); color: var(--label2); text-transform: none; }
+.sheet-tab.add { background: none; border: 1px dashed var(--label3); color: var(--label2); }
 input[type=search] { width: 100%; min-height: 44px; padding: 11px 16px; border-radius: var(--radius); border: 0; background: var(--bg2); color: var(--label); font: inherit; margin-bottom: 12px; }
 .sheet-body .group .row[aria-checked] .tick-mark, .group .row .tick-mark { width: 20px; height: 20px; color: var(--tint); margin-left: auto; }
