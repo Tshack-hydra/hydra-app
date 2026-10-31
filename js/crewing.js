@@ -29,7 +29,20 @@ const GREEN = { red: 0.204, green: 0.659, blue: 0.325 };
 const WHITE = { red: 1, green: 1, blue: 1 };
 const GREY = { red: 0.718, green: 0.718, blue: 0.718 };
 // One colour per project in the calendar view (all readable with white text)
-const PALETTE = ['#3f51b5', '#0b8043', '#c2185b', '#e4630a', '#039be5', '#8e24aa', '#616161', '#d50000'];
+// Each project gets its own Google event colour (by its order in the sheet). Green and grey are left out: they mean
+// Booked and Pencilled. id = Google colorId, hex = the same colour in the app.
+const PROJECT_COLOURS = [
+  { id: '9', hex: '#3f51b5', fg: '#fff' },    // blueberry
+  { id: '6', hex: '#f4511e', fg: '#fff' },    // tangerine
+  { id: '3', hex: '#8e24aa', fg: '#fff' },    // grape
+  { id: '7', hex: '#039be5', fg: '#fff' },    // peacock
+  { id: '11', hex: '#d50000', fg: '#fff' },   // tomato
+  { id: '5', hex: '#f6bf26', fg: '#1f1f1d' }, // banana
+  { id: '4', hex: '#e67c73', fg: '#fff' },    // flamingo
+  { id: '1', hex: '#7986cb', fg: '#fff' },    // lavender
+];
+const BOOKED_COLOUR = { hex: '#0b8043', fg: '#fff' };    // basil, Google colour 10
+const PENCIL_COLOUR = { hex: '#616161', fg: '#fff' };    // graphite, Google colour 8
 
 const sid = () => CONFIG.spreadsheetId;
 const text = c => (c?.v || '').trim();
@@ -136,11 +149,11 @@ export function parseCrewing(rows, today = new Date()) {
 //   kind 'ok' = a person Booked on a project day (green), kind 'pencil' = Pencilled (named, not confirmed)
 export function calendarItems(projects) {
   const out = new Map();
-  for (const p of projects) for (const col of p.cols) for (const d of col.dates) {
+  for (const [pi, p] of projects.entries()) for (const col of p.cols) for (const d of col.dates) {
     const date = ymd(d);
     const crew = p.people.filter(x => x.cells.has(col.col)).map(x => ({ name: x.name, ok: x.cells.get(col.col).ok }));
     const key = ['p', p.name, date].join('|').toLowerCase();
-    out.set(key, { key, kind: 'project', project: p.name, person: '', date, note: '', label: col.label, crew });
+    out.set(key, { key, kind: 'project', project: p.name, person: '', date, note: '', label: col.label, crew, colour: PROJECT_COLOURS[pi % PROJECT_COLOURS.length].id });
     for (const person of p.people) {
       const cell = person.cells.get(col.col);
       if (!cell) continue;
@@ -175,8 +188,8 @@ const hash = (s, seed = 0) => { // cyrb53
 // Google event ids may use a–v and 0–9 only (base 32)
 const eventId = key => 'hc' + hash(key).toString(32) + hash(key, 7).toString(32);
 
-// Google's event colours: project days blue, booked green, pencilled grey
-const EVENT_COLOUR = { project: '9', ok: '10', pencil: '8' };
+// Google's event colours: project days take their project's colour, booked people green (basil), pencilled grey (graphite)
+const EVENT_COLOUR = { ok: '10', pencil: '8' };
 const FOOTER = 'Kept up to date from the PROJECT CREWING tab of the Hydra spreadsheet. Change bookings there or in the app.';
 
 function eventFor(b) {
@@ -190,7 +203,7 @@ function eventFor(b) {
   return {
     summary,
     description: [...lines, '', FOOTER].join('\n'),
-    colorId: EVENT_COLOUR[b.kind],
+    colorId: b.kind === 'project' ? b.colour : EVENT_COLOUR[b.kind],
     start: { date: b.date },
     end: { date: ymd(addDays(parseYmd(b.date), 1)) },
     extendedProperties: { private: { hydraCrew: '1', hydraKind: b.kind, hydraProject: b.project, hydraPerson: b.person, hydraNote: b.note || '' } },
@@ -428,7 +441,7 @@ export function renderCrewing(o) {
   const stored = store.get(VIEW, 'days');
   const view = ['sheet', 'calendar'].includes(stored) ? stored : 'days';
   const setView = v => { store.set(VIEW, v); o.redraw(); };
-  const colours = new Map(data.projects.map((p, i) => [p.name, PALETTE[i % PALETTE.length]]));
+  const colours = new Map(data.projects.map((p, i) => [p.name, PROJECT_COLOURS[i % PROJECT_COLOURS.length]]));
 
   fill(tools, h('div', { class: 'seg', role: 'group', 'aria-label': 'Crewing view' },
     [['days', 'Days'], ['sheet', 'Sheet'], ['calendar', 'Calendar']].map(([v, label]) =>
@@ -516,7 +529,9 @@ function calendarView(o, all, colours) {
     month = monthStartOf(next ? parseYmd(next.date) : new Date());
     if (next && selected < ymd()) selected = next.date;
   }
-  const colourOf = p => colours.get(p) || PALETTE[hash(p) % PALETTE.length];
+  const colourOf = p => (colours.get(p) || PROJECT_COLOURS[hash(p) % PROJECT_COLOURS.length]).hex;
+  // chips match Google Calendar: project days in the project's colour, booked green, pencilled grey
+  const chipColour = b => b.kind === 'ok' ? BOOKED_COLOUR : b.kind === 'pencil' ? PENCIL_COLOUR : colours.get(b.project) || PROJECT_COLOURS[hash(b.project) % PROJECT_COLOURS.length];
   const wrap = h('div', {});
   let items = [];
   let state = calState.id ? 'loading' : 'sheet'; // loading | ready | sheet (not connected: show the sheet's own bookings) | error
@@ -568,7 +583,7 @@ function calendarView(o, all, colours) {
         'aria-label': dayLabel(parseYmd(k)) + (evs.length ? `, ${evs.filter(b => b.kind === 'project').length} project, ${evs.filter(b => b.kind === 'ok').length} booked, ${evs.filter(b => b.kind === 'pencil').length} pencilled` : ''),
         onclick: () => { selected = k; if (k.slice(0, 7) !== mKey) { month = monthStartOf(parseYmd(k)); load(); } else draw(); },
       }, h('span', { class: 'num' }, parseYmd(k).getDate()), h('span', { class: 'chips-day' },
-        few.map(b => h('span', { class: 'mchip' + (b.kind === 'project' ? ' proj' : b.kind === 'pencil' ? ' pencil' : ''), style: { '--chip-bg': colourOf(b.project), '--chip-fg': '#fff' } }, b.kind === 'project' ? b.project : shortName(b.person))),
+        few.map(b => h('span', { class: 'mchip' + (b.kind === 'project' ? ' proj' : b.kind === 'pencil' ? ' pencil' : ''), style: { '--chip-bg': chipColour(b).hex, '--chip-fg': chipColour(b).fg } }, b.kind === 'project' ? b.project : shortName(b.person))),
         evs.length > few.length ? h('span', { class: 'mmore' }, `+${evs.length - few.length} more`) : null));
     });
     const day = byDay.get(selected) || [];
@@ -576,7 +591,9 @@ function calendarView(o, all, colours) {
     const legend = [...new Set(shown.map(b => b.project))].sort();
     fill(wrap,
       state === 'error' ? h('p', { class: 'error' }, 'Couldn’t read the Google calendar, showing the sheet instead: ' + err) : null,
-      legend.length ? h('div', { class: 'chips' }, legend.map(n => h('span', { class: 'chip static', style: { '--c': colourOf(n) } }, h('i', { class: 'dot' }), n))) : null,
+      legend.length ? h('div', { class: 'chips' }, legend.map(n => h('span', { class: 'chip static', style: { '--c': colourOf(n) } }, h('i', { class: 'dot' }), n)),
+        h('span', { class: 'chip static', style: { '--c': BOOKED_COLOUR.hex } }, h('i', { class: 'dot' }), 'Booked'),
+        h('span', { class: 'chip static', style: { '--c': PENCIL_COLOUR.hex } }, h('i', { class: 'dot' }), 'Pencilled')) : null,
       h('div', { class: 'month-head' },
         h('h2', {}, month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })),
         h('button', { class: 'btn small icon-only', 'aria-label': 'Previous month', onclick: () => step(-1) }, icon('chevron-left')),

@@ -90,7 +90,7 @@ Setup steps for Google / Dropbox / Dext / hosting are in `README.md`.
 - Google Calendar mirror "Project Crewing": auto-created from the app, shared with the domain (writer), id stored in the
   spreadsheet's developer metadata (`hydraCrewingCalendar`). All-day events with deterministic ids (letters a–v and digits
   only! so concurrent syncs don't duplicate) and `hydraCrew=1`, three kinds (`hydraKind`): `project` (one per header date,
-  blue, lists the crew), `ok` (Booked person, green), `pencil` (Pencilled person, grey). Synced whenever the view opens and
+  in the project's own colour from `PROJECT_COLOURS`, by sheet order, never green/grey; lists the crew), `ok` (Booked person, green), `pencil` (Pencilled person, grey). Synced whenever the view opens and
   the items changed; the app's Calendar view is read back from the Google calendar.
 - `tasks.js` and the list view skip this tab. A "+ PROJECT CREWING" tab button creates an empty one.
 
