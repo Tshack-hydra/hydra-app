@@ -67,13 +67,6 @@ function route() {
   navPrimary.replaceChildren();
   main.replaceChildren();
   window.scrollTo(0, 0);
-  // slide the new section in from the side it was swiped from
-  if (slideFrom) {
-    main.classList.remove('from-left', 'from-right');
-    void main.offsetWidth; // restart the animation
-    main.classList.add('from-' + slideFrom);
-    slideFrom = null;
-  }
   try {
     r.render(main, ctx);
   } catch (e) {
@@ -165,35 +158,6 @@ document.body.append(ptr);
     ptr.classList.remove('busy');
     show(0);
   });
-})();
-
-// ---- swipe left / right to move between the tab-bar sections (Calendar → Tasks → Sheets → …) ----
-let slideFrom = null;
-(() => {
-  const EDGE = 24; // leave the screen edges to iOS's own back/forward swipe
-  const sections = () => [...document.querySelectorAll('.tabbar a[data-route]')].map(a => a.dataset.route);
-  let start = null;
-  addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    const skip = e.touches.length !== 1 || isModalOpen() || document.body.classList.contains('gated')
-      || t.clientX < EDGE || t.clientX > innerWidth - EDGE
-      // things that scroll sideways or take typing keep their own gestures
-      || e.target.closest('.chips, .sheet-tabs, .grid-wrap, .crew-scroll, input, textarea, select, [contenteditable]');
-    start = skip ? null : { x: t.clientX, y: t.clientY, at: Date.now() };
-  }, { passive: true });
-  addEventListener('touchend', e => {
-    if (!start) return;
-    const t = e.changedTouches[0];
-    const dx = t.clientX - start.x, dy = t.clientY - start.y, quick = Date.now() - start.at < 700;
-    start = null;
-    if (!quick || Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2) return;
-    const list = sections();
-    const i = list.indexOf(lastTab);
-    const next = list[i + (dx < 0 ? 1 : -1)];
-    if (i < 0 || !next || (location.hash.match(/^#\/(\w+)/) || [])[1] === 'settings') return;
-    slideFrom = dx < 0 ? 'right' : 'left';
-    location.hash = '#/' + next;
-  }, { passive: true });
 })();
 
 // ---- updates: a new publish installs in the background, then we offer to switch to it ----

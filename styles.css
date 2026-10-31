@@ -294,13 +294,6 @@ input[type=checkbox][switch]:checked::before, .check input[type=checkbox]:checke
 .toolbar .spacer { flex: 1; }
 .toolbar .end { margin-left: auto; }
 
-/* swiping between sections: the new one slides in from the side you swiped from */
-#page.from-right { animation: slide-from-right 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
-#page.from-left { animation: slide-from-left 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
-@keyframes slide-from-right { from { transform: translateX(40px); opacity: 0.4; } }
-@keyframes slide-from-left { from { transform: translateX(-40px); opacity: 0.4; } }
-@media (prefers-reduced-motion: reduce) { #page.from-right, #page.from-left { animation: fade 0.2s; } }
-
 /* Who picker in task forms: a field showing the chosen initials, opening a list like the sheet's drop-down */
 .who-field {
   width: 100%; min-height: 44px; padding: 8px 12px 8px 16px; border: 0; border-radius: var(--radius); background: var(--bg2);
